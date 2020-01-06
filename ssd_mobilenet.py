@@ -141,9 +141,13 @@ def test():
   ssdm.draw_boxes_and_save(boxes, labels, scores, img, 'output.jpg')
 
 class SSD_MOBILENET():
-  def __init__(self, wanted_lbl):
-    self.ssdm = SSDMobileNet('ssd_mobilenet.tflite', 'coco_labelmap.txt')
-    self.wanted_label = wanted_lbl
+  def __init__(self, wanted_label=None, model_file=None, label_file=None):
+    if model_file is None:
+        model_file = 'ssd_mobilenet.tflite'
+    if label_file is None:
+        label_file = 'coco_labelmap.txt'
+    self.ssdm = SSDMobileNet(model_file, label_file)
+    self.wanted_label = wanted_label
   def detect_image(self, img):
     #t0 = time.time()
     inp = self.ssdm.prepare_image(img)
@@ -152,7 +156,7 @@ class SSD_MOBILENET():
     #print("detect_time={}".format(t1 - t0))
     res = []
     for i in range(len(boxes)):
-      if labels[i] == self.wanted_label:
+      if self.wanted_label is None or labels[i] == self.wanted_label:
         box = boxes[i]
         res.append([box[0], box[1], box[2] - box[0], box[3] - box[1]])
     return res
