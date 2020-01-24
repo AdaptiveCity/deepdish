@@ -19,7 +19,7 @@ from yolo3.model import yolo_eval
 from yolo3.utils import letterbox_image
 
 class YOLO(object):
-    def __init__(self):
+    def __init__(self,wanted_label=None):
         basedir = os.getenv('DEEPSORTHOME','.')
         self.model_path = '{}/model_data/yolo.h5'.format(basedir)
         self.anchors_path = '{}/model_data/yolo_anchors.txt'.format(basedir)
@@ -32,6 +32,9 @@ class YOLO(object):
         self.model_image_size = (416, 416) # fixed size or (None, None)
         self.is_fixed_size = self.model_image_size != (None, None)
         self.boxes, self.scores, self.classes = self.generate()
+        if wanted_label is None:
+            wanted_label = 'person'
+        self.wanted_label = wanted_label
 
     def _get_class(self):
         classes_path = os.path.expanduser(self.classes_path)
@@ -98,7 +101,7 @@ class YOLO(object):
         return_boxs = []
         for i, c in reversed(list(enumerate(out_classes))):
             predicted_class = self.class_names[c]
-            if predicted_class != 'person': # and predicted_class != 'bicycle':
+            if predicted_class != self.wanted_label:
                 continue
             box = out_boxes[i]
            # score = out_scores[i]  
