@@ -76,7 +76,7 @@ class SSDMobileNet:
 
   def predict(self, image, confidence=0.5, iou_threshold=0.5, original_image_size=None):
     """Returns a sorted array of classification results."""
-    self.interpreter.set_tensor(self.input_details[0]['index'], np.expand_dims(image, 0))
+    self.interpreter.set_tensor(self.input_details[0]['index'], np.expand_dims(image, 0).astype(np.uint8))
     self.interpreter.invoke()
     output_arrays = self.interpreter.get_output_details()
     output_details = output_arrays[0]
@@ -105,9 +105,14 @@ class SSDMobileNet:
     n_boxes, n_labels, n_scores = self.nms_boxes(boxes, labels, scores, iou_threshold)
     if n_boxes:
       boxes = np.concatenate(n_boxes)
-      labels = np.concatenate(n_labels)
+      labels = np.concatenate(n_labels).astype(np.uint)
       scores = np.concatenate(n_scores)
-      labelnames = [self.labels[lblidx+1] for lblidx in labels]
+      labelnames = []
+      for lblidx in labels:
+          if lblidx >= 0 and lblidx < len(self.labels) - 1:
+              labelnames.append(self.labels[lblidx+1])
+          else:
+              print("Invalid label index: {} in {}".format(lblidx, labels))
       return boxes, labelnames, scores
     else:
       return [], [], []
