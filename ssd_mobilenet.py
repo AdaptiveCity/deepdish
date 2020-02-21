@@ -9,8 +9,10 @@ import numpy as np
 import tensorflow as tf
 
 class SSDMobileNet:
-  def __init__(self,model_path,label_path):
+  def __init__(self,model_path,label_path,num_threads=None):
     self.interpreter = tf.lite.Interpreter(model_path)
+    if num_threads is not None:
+        self.interpreter.set_num_threads(num_threads)
     self.interpreter.allocate_tensors()
     self.input_details = self.interpreter.get_input_details()
     self.height = self.input_details[0]['shape'][1]
@@ -141,12 +143,12 @@ def test():
   ssdm.draw_boxes_and_save(boxes, labels, scores, img, 'output.jpg')
 
 class SSD_MOBILENET():
-  def __init__(self, wanted_label=None, model_file=None, label_file=None):
+  def __init__(self, wanted_label=None, model_file=None, label_file=None, num_threads=None):
     if model_file is None:
         model_file = 'ssd_mobilenet.tflite'
     if label_file is None:
         label_file = 'coco_labelmap.txt'
-    self.ssdm = SSDMobileNet(model_file, label_file)
+    self.ssdm = SSDMobileNet(model_file, label_file, num_threads=num_threads)
     self.wanted_label = wanted_label
   def detect_image(self, img):
     #t0 = time.time()
