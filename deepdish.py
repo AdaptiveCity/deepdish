@@ -15,6 +15,8 @@ import signal
 import numpy as np
 import cv2
 from PIL import Image
+from PIL import ImageDraw
+from PIL import ImageFont
 
 from ssd_mobilenet import SSD_MOBILENET
 from intersection import any_intersection, intersection
@@ -29,13 +31,14 @@ from deep_sort.detection import Detection as ddet
 import asyncio
 import concurrent.futures
 
-from quart import Quart
+from quart import Quart, current_app
 
 
 webapp = Quart(__name__)
 
 @webapp.route('/')
 async def hello():
+    pipeline = current_app.config.pipeline
     return 'hello'
 
 
@@ -50,6 +53,83 @@ class FreshQueue(asyncio.Queue):
         self._queue = []
         return item
 
+class FontLib:
+    def __init__(self, display_w):
+        tinysize = int(24.0 / 640.0 * display_w)
+        smallsize = int(40.0 / 640.0 * display_w)
+        largesize = int(48.0 / 640.0 * display_w)
+        self.table = {'tiny': ImageFont.truetype('fonts/truetype/freefont/FreeSansBold.ttf', tinysize),
+                      'small': ImageFont.truetype('fonts/truetype/freefont/FreeSansBold.ttf', smallsize),
+                      'large': ImageFont.truetype('fonts/truetype/freefont/FreeSansBold.ttf', largesize)}
+    def fetch(self, name):
+        if name in self.table:
+            return self.table[name]
+        else:
+            return self.table['large']
+
+class RenderInfo:
+    def __init__(self, ratio, fontlib, draw, buffer):
+        self.ratio = ratio
+        self.fontlib = fontlib
+        self.draw = draw
+        self.buffer = buffer
+
+class DetectedObject:
+    def __init__(self, bbox):
+        self.bbox = bbox
+        self.priority = 5
+        self.outline = (255, 0, 0)
+    def do_render(self, render):
+        pts = list(np.int32(np.array(self.bbox).reshape(-1,2) * render.ratio).reshape(-1)) 
+        render.draw.rectangle(pts, outline=self.outline)
+
+class TrackedObject:
+    def __init__(self, bbox, txt):
+        self.bbox = bbox
+        self.txt = txt
+        self.priority = 6
+        self.outline = (255, 255, 255)
+        self.font_fill = (0, 255, 0)
+        self.font = 'small'
+    def do_render(self, render):
+        pts = list(np.int32(np.array(self.bbox).reshape(-1,2) * render.ratio).reshape(-1)) 
+        render.draw.rectangle(pts, outline=self.outline)
+        render.draw.text(self.bbox[:2],str(self.txt), fill=self.font_fill, font=render.fontlib.fetch(self.font))
+
+class Line:
+    def do_render(self, render):
+        pts = list(np.int32(np.array(self.pts).reshape(-1,2) * render.ratio).reshape(-1)) 
+        render.draw.line(pts, fill=self.fill, width=self.width)
+
+class TrackedPath(Line):
+    def __init__(self, pts):
+        self.pts = pts
+        self.priority = 3
+        self.width = 3
+        self.fill = (255, 0, 255)
+
+class TrackedPathIntersection(Line):
+    def __init__(self, pts):
+        self.pts = pts
+        self.priority = 4
+        self.width = 5
+        self.fill = (0, 0, 255)
+
+class CameraCountLine(Line):
+    def __init__(self, pts):
+        self.pts = pts
+        self.priority = 2
+        self.width = 3
+        self.fill = (0, 0, 255)
+
+class CameraImage:
+    def __init__(self, image):
+        self.image = image
+        self.priority = 1
+
+    def do_render(self, render):
+        render.buffer.paste(self.image)
+
 class Pipeline:
     """Object detection and tracking pipeline"""
 
@@ -58,6 +138,8 @@ class Pipeline:
 
         # Initialise camera & camera viewport
         self.init_camera(input)
+        # Initialise output
+        self.init_output(self.args.output)
 
         # Initialise object detector (for some reason it has to happen
         # here & not within detect_objects(), or else the inference engine
@@ -80,6 +162,9 @@ class Pipeline:
         # Initialise database
         self.db = {}
         self.delcount = 0
+        self.intcount = 0
+        self.poscount = 0
+        self.negcount = 0
 
         self.loop = asyncio.get_event_loop()
 
@@ -98,6 +183,15 @@ class Pipeline:
             self.countline = np.array(list(map(int,self.args.line.strip().split(','))),dtype=int).reshape(2,2)
         self.cameracountline = self.countline.astype(float)
 
+    def init_output(self, output):
+        self.color_mode = None # fixme
+        fourcc = cv2.VideoWriter_fourcc(*'MP4V')
+        fps = self.cap.get(cv2.CAP_PROP_FPS)
+        (w, h) = (self.args.camera_width, self.args.camera_height)
+        self.backbuf = Image.new("RGBA", (w, h), (0,0,0,0))
+        self.draw = ImageDraw.Draw(self.backbuf)
+        self.output = cv2.VideoWriter(self.args.output,fourcc, fps, (w, h))
+
     def read_frame(self):
         ret, frame = self.cap.read()
         return frame
@@ -105,8 +199,9 @@ class Pipeline:
     async def capture(self, q):
         try:
             with concurrent.futures.ThreadPoolExecutor() as pool:
-                while True:
+                while self.running:
                     frame = await self.loop.run_in_executor(pool, self.read_frame)
+                    print(frame)
                     if frame is None:
                         print('Frame is None')
                         break
@@ -121,7 +216,7 @@ class Pipeline:
 
         frameCount = 0
         with concurrent.futures.ThreadPoolExecutor() as pool:
-            while True:
+            while self.running:
                 frameCount += 1
 
                 # Obtain next video frame
@@ -138,7 +233,6 @@ class Pipeline:
                 image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGRA2RGBA))
 
                 # Run object detection engine within a Thread Pool
-                print(frame)
                 boxes0 = await self.loop.run_in_executor(pool, self.object_detector.detect_image, image)
 
                 # Filter object detection boxes, including only those with areas of motion
@@ -150,45 +244,112 @@ class Pipeline:
                         boxes.append((x,y,w,h))
 
                 # Send results to next step in pipeline
-                await q_out.put((frame, boxes))
+                await q_out.put((frame, boxes, [CameraImage(image), CameraCountLine(self.cameracountline)]))
 
     async def encode_features(self, q_in, q_out):
         with concurrent.futures.ThreadPoolExecutor() as pool:
-            while True:
+            while self.running:
                 # Obtain next video frame and object detection boxes
-                (frame, boxes) = await q_in.get()
+                (frame, boxes, elements) = await q_in.get()
 
                 # Run feature encoder within a Thread Pool
                 features = await self.loop.run_in_executor(pool, self.encoder, frame, boxes)
 
                 # Build list of 'Detection' objects and send them to next step in pipeline
                 detections = [Detection(bbox, 1.0, feature) for bbox, feature in zip(boxes, features)]
-                await q_out.put(detections)
+                await q_out.put((detections, elements))
 
     async def track_objects(self, q_in, q_out):
-        while True:
-            detections = await q_in.get()
+        while self.running:
+            (detections, elements) = await q_in.get()
             boxes = np.array([d.tlwh for d in detections])
             scores = np.array([d.confidence for d in detections])
             indices = preprocessing.non_max_suppression(boxes, self.args.nms_max_overlap, scores)
             detections = [detections[i] for i in indices]
             self.tracker.predict()
             self.tracker.update(detections)
-            await q_out.put(detections)
+            await q_out.put((detections, elements))
 
-    async def process_results(self, q_in):
-        while True:
-            detections = await(q_in.get())
-            # a = (cameracountline[0,0], cameracountline[0,1])
-            # b = (cameracountline[1,0], cameracountline[1,1])
-            # drawline([a, b], fill=(0,0,255), width=3)
+    async def process_results(self, q_in, q_out):
+        while self.running:
+            (detections, elements) = await(q_in.get())
 
             for track in self.tracker.deleted_tracks:
                 i = track.track_id
                 if track.is_deleted():
-                    self.check_track(track.track_id)
+                    self.check_deleted_track(track.track_id)
 
-    def check_track(self, i):
+            for track in self.tracker.tracks:
+                i = track.track_id
+                if not track.is_confirmed() or track.time_since_update > 1:
+                    continue
+                if i not in self.db:
+                    self.db[i] = []
+
+                bbox = track.to_tlbr()
+
+                # Find the bottom-centre of the bounding box & add it to the tracking database
+                bottomCentre = np.array([(bbox[0] + bbox[2]) / 2.0, bbox[3]])
+                self.db[i].append(bottomCentre)
+
+                if len(self.db[i]) > 1:
+                    # If we have more than one datapoint for this tracked object
+                    pts = (np.array(self.db[i]).reshape((-1,1,2))).reshape(-1)
+                    elements.append(TrackedPath(pts))
+
+                    p1 = self.cameracountline[0]
+                    q1 = self.cameracountline[1]
+                    p2 = np.array(self.db[i][-1])
+                    q2 = np.array(self.db[i][-2])
+                    cp = np.cross(q1 - p1,q2 - p2)
+                    if intersection(p1,q1,p2,q2):
+                        self.intcount+=1
+                        print("track_id={} just intersected camera countline; cross-prod={}; intcount={}".format(i,cp,self.intcount))
+                        elements.append(TrackedPathIntersection(pts[-4:]))
+                        if cp >= 0:
+                            self.poscount+=1
+                        else:
+                            self.negcount+=1
+                        # send_mqtt_msg(frameCapTime)
+
+                elements.append(TrackedObject(bbox, str(track.track_id)))
+
+            for det in detections:
+                bbox = det.to_tlbr()
+                elements.append(DetectedObject(bbox))
+
+            await q_out.put(elements)
+
+    async def render_output(self, q_in):
+        (output_w, output_h) = (self.args.camera_width, self.args.camera_height)
+        ratio = 1
+        render = RenderInfo(ratio, FontLib(output_w), self.draw, self.backbuf)
+        try:
+            while self.running:
+                elements = await q_in.get()
+                # clear screen
+                self.draw.rectangle([0, 0, output_w, output_h], fill=0, outline=0)
+                # sort elements
+                elements.sort(key=lambda e: e.priority)
+                print(elements)
+                # draw elements
+                for e in elements:
+                    e.do_render(render)
+                # copy backbuf to output
+                backarray = np.array(self.backbuf)
+                if self.color_mode is not None:
+                    outputrgba = cv2.cvtColor(backarray, self.color_mode)
+                else:
+                    outputrgba = backarray
+                outputrgb = cv2.cvtColor(outputrgba, cv2.COLOR_RGBA2RGB)
+                self.output.write(outputrgb)
+                #cv2.imshow('main', outputrgb)
+                cv2.imwrite('tmp.jpg', outputrgb)
+                await asyncio.sleep(1.0 / 30.0) # FIXME
+        finally:
+            self.output.release()        
+
+    def check_deleted_track(self, i):
         if i in self.db and len(self.db[i]) > 1:
             if any_intersection(self.cameracountline[0], self.cameracountline[1], np.array(self.db[i])):
                 self.delcount+=1
@@ -196,16 +357,20 @@ class Pipeline:
             self.db[i] = []
 
     async def start(self):
+        self.running = True
         cameraQueue = FreshQueue()
         objectQueue = asyncio.Queue(maxsize=1)
         detectionQueue = asyncio.Queue(maxsize=1)
         resultQueue = asyncio.Queue(maxsize=1)
+        drawQueue = asyncio.Queue(maxsize=1)
 
-        asyncio.ensure_future(self.process_results(resultQueue))
-        asyncio.ensure_future(self.track_objects(detectionQueue, resultQueue))
-        asyncio.ensure_future(self.encode_features(objectQueue, detectionQueue))
-        asyncio.ensure_future(self.detect_objects(cameraQueue, objectQueue))
+        ps = [asyncio.ensure_future(self.render_output(drawQueue)),
+              asyncio.ensure_future(self.process_results(resultQueue, drawQueue)),
+              asyncio.ensure_future(self.track_objects(detectionQueue, resultQueue)),
+              asyncio.ensure_future(self.encode_features(objectQueue, detectionQueue)),
+              asyncio.ensure_future(self.detect_objects(cameraQueue, objectQueue))]
         await self.capture(cameraQueue)
+        self.running = False
 
 # MODEL = 'ssdmobilenetv1.tflite'
 # LABELS = 'labelmap.txt'
@@ -222,6 +387,8 @@ def get_arguments():
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--input', help="input MP4 file for video file input",
+                        default=None)
+    parser.add_argument('--output', help="output file with annotated video frames",
                         default=None)
     parser.add_argument('--line', '-L', help="counting line: x1,y1,x2,y2",
                         default=None)
@@ -251,7 +418,7 @@ def get_arguments():
     parser.add_argument('--deepsorthome', help='Location of model_data directory',
                         metavar='PATH', default=None)
     parser.add_argument('--camera-flip', help='Flip the camera image vertically',
-                        default=True, type=bool)
+                        default=False, type=bool)
     parser.add_argument('--camera-width', help='Camera resolution width in pixels',
                         default=640, type=int)
     parser.add_argument('--camera-height', help='Camera resolution height in pixels',
@@ -286,6 +453,9 @@ class CommandServer():
         print('Send %r to %s' % (message, addr))
         self.transport.sendto(data, addr)
 
+    def connection_lost(self, exc):
+        pass
+
 cmdserver = None
 
 @webapp.before_serving
@@ -294,10 +464,14 @@ async def main():
     loop = asyncio.get_event_loop()
     args = get_arguments()
     pipeline = Pipeline(args)
+    current_app.config.pipeline = pipeline
     cmdserver, protocol = await loop.create_datagram_endpoint(
         lambda: CommandServer(pipeline),
         local_addr=('127.0.0.1', args.control_port))
-    asyncio.ensure_future(pipeline.start())
+    await pipeline.start()
+    for p in asyncio.Task.all_tasks():
+        p.cancel()
+    # await loop.run_until_complete(asyncio.Task.all_tasks())
 
 @webapp.after_serving
 async def shutdown():
