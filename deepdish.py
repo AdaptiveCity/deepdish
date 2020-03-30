@@ -67,6 +67,7 @@ class FontLib:
         else:
             return self.table['large']
 
+# Details for drawing things on a buffer
 class RenderInfo:
     def __init__(self, ratio, fontlib, draw, buffer):
         self.ratio = ratio
@@ -74,15 +75,20 @@ class RenderInfo:
         self.draw = draw
         self.buffer = buffer
 
+##################################################
+# Graphical elements
+
+# A detected object - simply the information conveyed by the object detector
 class DetectedObject:
     def __init__(self, bbox):
         self.bbox = bbox
         self.priority = 5
         self.outline = (255, 0, 0)
     def do_render(self, render):
-        pts = list(np.int32(np.array(self.bbox).reshape(-1,2) * render.ratio).reshape(-1)) 
+        pts = list(np.int32(np.array(self.bbox).reshape(-1,2) * render.ratio).reshape(-1))
         render.draw.rectangle(pts, outline=self.outline)
 
+# A tracked object based on the output of the tracker
 class TrackedObject:
     def __init__(self, bbox, txt):
         self.bbox = bbox
@@ -92,13 +98,14 @@ class TrackedObject:
         self.font_fill = (0, 255, 0)
         self.font = 'small'
     def do_render(self, render):
-        pts = list(np.int32(np.array(self.bbox).reshape(-1,2) * render.ratio).reshape(-1)) 
+        pts = list(np.int32(np.array(self.bbox).reshape(-1,2) * render.ratio).reshape(-1))
         render.draw.rectangle(pts, outline=self.outline)
         render.draw.text(self.bbox[:2],str(self.txt), fill=self.font_fill, font=render.fontlib.fetch(self.font))
 
+# Base class for graphical elements that draw a line
 class Line:
     def do_render(self, render):
-        pts = list(np.int32(np.array(self.pts).reshape(-1,2) * render.ratio).reshape(-1)) 
+        pts = list(np.int32(np.array(self.pts).reshape(-1,2) * render.ratio).reshape(-1))
         render.draw.line(pts, fill=self.fill, width=self.width)
 
 class TrackedPath(Line):
@@ -129,6 +136,30 @@ class CameraImage:
 
     def do_render(self, render):
         render.buffer.paste(self.image)
+
+class CountingStats:
+    def __init__(self, negcount, poscount):
+        self.negcount = negcount
+        self.poscount = poscount
+        self.priority = 10
+        self.font_fill_negcount = (255, 0, 0)
+        self.font_fill_abscount = (0, 255, 0)
+        self.font_fill_poscount = (0, 0, 255)
+        self.font = 'large'
+
+    def do_render(self, render):
+        font = render.fontlib.fetch(self.font)
+        [w, h] = render.buffer.size
+
+        (_, dy) = font.getsize(str(self.negcount))
+        render.draw.text((0, h - dy), str(self.negcount), fill=self.font_fill_negcount, font=font)
+
+        abscount = abs(self.negcount-self.poscount)
+        (dx, dy) = font.getsize(str(abscount))
+        render.draw.text(((w - dx)/2, h - dy), str(abscount), fill=self.font_fill_abscount, font=font)
+
+        (dx, dy) = font.getsize(str(self.poscount))
+        render.draw.text((w - dx, h - dy), str(self.poscount), fill=self.font_fill_poscount, font=font)
 
 class Pipeline:
     """Object detection and tracking pipeline"""
@@ -201,7 +232,7 @@ class Pipeline:
             with concurrent.futures.ThreadPoolExecutor() as pool:
                 while self.running:
                     frame = await self.loop.run_in_executor(pool, self.read_frame)
-                    print(frame)
+                    #print(frame)
                     if frame is None:
                         print('Frame is None')
                         break
@@ -318,6 +349,8 @@ class Pipeline:
                 bbox = det.to_tlbr()
                 elements.append(DetectedObject(bbox))
 
+            elements.append(CountingStats(self.negcount, self.poscount))
+
             await q_out.put(elements)
 
     async def render_output(self, q_in):
@@ -327,15 +360,18 @@ class Pipeline:
         try:
             while self.running:
                 elements = await q_in.get()
-                # clear screen
+
+                # Clear screen
                 self.draw.rectangle([0, 0, output_w, output_h], fill=0, outline=0)
-                # sort elements
+
+                # Sort elements by display priority
                 elements.sort(key=lambda e: e.priority)
-                print(elements)
-                # draw elements
+
+                # Draw elements
                 for e in elements:
                     e.do_render(render)
-                # copy backbuf to output
+
+                # Copy backbuf to output
                 backarray = np.array(self.backbuf)
                 if self.color_mode is not None:
                     outputrgba = cv2.cvtColor(backarray, self.color_mode)
@@ -344,10 +380,9 @@ class Pipeline:
                 outputrgb = cv2.cvtColor(outputrgba, cv2.COLOR_RGBA2RGB)
                 self.output.write(outputrgb)
                 #cv2.imshow('main', outputrgb)
-                cv2.imwrite('tmp.jpg', outputrgb)
                 await asyncio.sleep(1.0 / 30.0) # FIXME
         finally:
-            self.output.release()        
+            self.output.release()
 
     def check_deleted_track(self, i):
         if i in self.db and len(self.db[i]) > 1:
@@ -364,11 +399,11 @@ class Pipeline:
         resultQueue = asyncio.Queue(maxsize=1)
         drawQueue = asyncio.Queue(maxsize=1)
 
-        ps = [asyncio.ensure_future(self.render_output(drawQueue)),
-              asyncio.ensure_future(self.process_results(resultQueue, drawQueue)),
-              asyncio.ensure_future(self.track_objects(detectionQueue, resultQueue)),
-              asyncio.ensure_future(self.encode_features(objectQueue, detectionQueue)),
-              asyncio.ensure_future(self.detect_objects(cameraQueue, objectQueue))]
+        asyncio.ensure_future(self.render_output(drawQueue))
+        asyncio.ensure_future(self.process_results(resultQueue, drawQueue))
+        asyncio.ensure_future(self.track_objects(detectionQueue, resultQueue))
+        asyncio.ensure_future(self.encode_features(objectQueue, detectionQueue))
+        asyncio.ensure_future(self.detect_objects(cameraQueue, objectQueue))
         await self.capture(cameraQueue)
         self.running = False
 
@@ -383,7 +418,7 @@ class Pipeline:
 # INPUT='mot17-03.mp4'
 
 def get_arguments():
-    basedir = os.getenv('DEEPSORTHOME','.')
+    basedir = os.getenv('DEEPDISHHOME','.')
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--input', help="input MP4 file for video file input",
@@ -479,4 +514,7 @@ async def shutdown():
     cmdserver.close()
 
 if __name__ == '__main__':
-    webapp.run()
+    try:
+        webapp.run()
+    except concurrent.futures.CancelledError:
+        pass
