@@ -3,7 +3,6 @@
 
 from __future__ import division, print_function, absolute_import
 
-
 import os
 import io
 from timeit import time
@@ -76,7 +75,27 @@ class RenderInfo:
         self.buffer = buffer
 
 ##################################################
-# Graphical elements
+# Output elements
+
+class FrameInfo:
+    def __init__(self, t_frame, count):
+        self.t_frame = t_frame
+        self.frame_count = count
+        self.priority = 0
+
+    def do_text(self, handle, elements):
+        handle.write('Frame {}:'.format(self.frame_count))
+        for e in elements:
+            if isinstance(e, TimingInfo):
+                handle.write(' {}={:.0f}ms'.format(e.short_label, e.delta_t*1000))
+        handle.write('\n')
+
+class TimingInfo:
+    def __init__(self, desc, short_label, delta_t):
+        self.description = desc
+        self.short_label = short_label
+        self.delta_t = delta_t
+        self.priority = 1
 
 # A detected object - simply the information conveyed by the object detector
 class DetectedObject:
@@ -161,6 +180,8 @@ class CountingStats:
         (dx, dy) = font.getsize(str(self.poscount))
         render.draw.text((w - dx, h - dy), str(self.poscount), fill=self.font_fill_poscount, font=font)
 
+##################################################
+
 class Pipeline:
     """Object detection and tracking pipeline"""
 
@@ -225,21 +246,27 @@ class Pipeline:
 
     def read_frame(self):
         ret, frame = self.cap.read()
-        return frame
+        return (frame, time.time())
 
     async def capture(self, q):
         try:
             with concurrent.futures.ThreadPoolExecutor() as pool:
                 while self.running:
-                    frame = await self.loop.run_in_executor(pool, self.read_frame)
+                    (frame, t_frame) = await self.loop.run_in_executor(pool, self.read_frame)
                     #print(frame)
                     if frame is None:
                         print('Frame is None')
                         break
-                    await q.put(frame)
+                    await q.put((frame, t_frame))
                     await asyncio.sleep(1.0/30.0)
         finally:
             self.cap.release()
+
+    def run_object_detector(self, image):
+        t1 = time.time()
+        boxes = self.object_detector.detect_image(image)
+        t2 = time.time()
+        return (boxes, t2 - t1)
 
     async def detect_objects(self, q_in, q_out):
         # Initialise background subtractor
@@ -251,7 +278,7 @@ class Pipeline:
                 frameCount += 1
 
                 # Obtain next video frame
-                frame = await q_in.get()
+                (frame, t_frame) = await q_in.get()
 
                 if self.args.camera_flip:
                     # If we need to flip the image vertically
@@ -264,7 +291,7 @@ class Pipeline:
                 image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGRA2RGBA))
 
                 # Run object detection engine within a Thread Pool
-                boxes0 = await self.loop.run_in_executor(pool, self.object_detector.detect_image, image)
+                (boxes0, delta_t) = await self.loop.run_in_executor(pool, self.run_object_detector, image)
 
                 # Filter object detection boxes, including only those with areas of motion
                 boxes = []
@@ -275,7 +302,11 @@ class Pipeline:
                         boxes.append((x,y,w,h))
 
                 # Send results to next step in pipeline
-                await q_out.put((frame, boxes, [CameraImage(image), CameraCountLine(self.cameracountline)]))
+                elements = [FrameInfo(t_frame, frameCount),
+                            CameraImage(image),
+                            CameraCountLine(self.cameracountline),
+                            TimingInfo('Object detection latency', 'objd', delta_t)]
+                await q_out.put((frame, boxes, elements))
 
     async def encode_features(self, q_in, q_out):
         with concurrent.futures.ThreadPoolExecutor() as pool:
@@ -353,33 +384,57 @@ class Pipeline:
 
             await q_out.put(elements)
 
+    def graphical_output(self, render : RenderInfo, elements, output_wh : (int, int)):
+        (output_w, output_h) = output_wh
+
+        # Clear screen
+        self.draw.rectangle([0, 0, output_w, output_h], fill=0, outline=0)
+
+        # Sort elements by display priority
+        elements.sort(key=lambda e: e.priority)
+
+        # Draw elements
+        for e in elements:
+            if hasattr(e, 'do_render'):
+                e.do_render(render)
+
+        # Copy backbuf to output
+        backarray = np.array(self.backbuf)
+        if self.color_mode is not None:
+            outputrgba = cv2.cvtColor(backarray, self.color_mode)
+        else:
+            outputrgba = backarray
+        outputrgb = cv2.cvtColor(outputrgba, cv2.COLOR_RGBA2RGB)
+        self.output.write(outputrgb)
+        #cv2.imshow('main', outputrgb)
+
+    def text_output(self, handle, elements):
+        # Sort elements by priority
+        elements.sort(key=lambda e: e.priority)
+
+        for e in elements:
+            if hasattr(e, 'do_text'):
+                e.do_text(handle, elements)
+
     async def render_output(self, q_in):
         (output_w, output_h) = (self.args.camera_width, self.args.camera_height)
-        ratio = 1
+        ratio = 1 #fixme
         render = RenderInfo(ratio, FontLib(output_w), self.draw, self.backbuf)
+
         try:
             while self.running:
                 elements = await q_in.get()
 
-                # Clear screen
-                self.draw.rectangle([0, 0, output_w, output_h], fill=0, outline=0)
+                self.graphical_output(render, elements, (output_w, output_h))
 
-                # Sort elements by display priority
-                elements.sort(key=lambda e: e.priority)
-
-                # Draw elements
                 for e in elements:
-                    e.do_render(render)
+                    if isinstance(e, FrameInfo):
+                        t_frame = e.t_frame
+                        break
+                elements.append(TimingInfo('Overall latency', 'overall', time.time() - t_frame))
 
-                # Copy backbuf to output
-                backarray = np.array(self.backbuf)
-                if self.color_mode is not None:
-                    outputrgba = cv2.cvtColor(backarray, self.color_mode)
-                else:
-                    outputrgba = backarray
-                outputrgb = cv2.cvtColor(outputrgba, cv2.COLOR_RGBA2RGB)
-                self.output.write(outputrgb)
-                #cv2.imshow('main', outputrgb)
+                self.text_output(sys.stdout, elements)
+
                 await asyncio.sleep(1.0 / 30.0) # FIXME
         finally:
             self.output.release()
