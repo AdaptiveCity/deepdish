@@ -36,7 +36,8 @@ RUN echo $'#!/bin/bash\nPYTHONPATH=/tracker DEEPSORTHOME=/tracker YOLOHOME=/trac
 RUN chmod +x /usr/bin/count.sh
 
 COPY *.py /tracker/
-COPY detectors/* /tracker/detectors/
+COPY detectors/mobilenet/* /tracker/detectors/mobilenet/
+COPY detectors/yolo/* /tracker/detectors/yolo/
 COPY yolo3/*.py /tracker/yolo3/
 COPY tools/*.py /tracker/tools/
 COPY deep_sort/*.py /tracker/deep_sort/
