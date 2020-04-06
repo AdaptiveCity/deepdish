@@ -8,13 +8,15 @@ RUN apt-get install -y \
             python3-numpy \
             python3-sklearn \
             python3-opencv \
+            fonts-freefont-ttf \
             vim less wget
 
-RUN pip3 install keras
+RUN pip3 install --upgrade pip
+RUN pip3 install keras quart
 
-RUN mkdir -p /tracker/model_data
+RUN mkdir -p /tracker/detectors/yolo
 
-RUN wget -O /tracker/model_data/yolo.h5 https://github.com/OlafenwaMoses/ImageAI/releases/download/1.0/yolo.h5
+RUN wget -O /tracker/detectors/yolo/yolo.h5 https://github.com/OlafenwaMoses/ImageAI/releases/download/1.0/yolo.h5
 
 ARG USER_ID
 ARG GROUP_ID
@@ -33,10 +35,10 @@ RUN echo $'#!/bin/bash\nPYTHONPATH=/tracker DEEPSORTHOME=/tracker YOLOHOME=/trac
 
 RUN chmod +x /usr/bin/count.sh
 
-COPY yolov3.cfg *.py /tracker/
+COPY *.py /tracker/
+COPY detectors/* /tracker/detectors/
 COPY yolo3/*.py /tracker/yolo3/
 COPY tools/*.py /tracker/tools/
-COPY model_data/*.txt model_data/*.pb /tracker/model_data/
 COPY deep_sort/*.py /tracker/deep_sort/
 
 USER user

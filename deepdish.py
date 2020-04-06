@@ -53,13 +53,20 @@ class FreshQueue(asyncio.Queue):
         return item
 
 class FontLib:
-    def __init__(self, display_w):
+    def __init__(self, display_w, fontbasedirs = ['.', '/usr/local/share', '/usr/share']):
         tinysize = int(24.0 / 640.0 * display_w)
         smallsize = int(40.0 / 640.0 * display_w)
         largesize = int(48.0 / 640.0 * display_w)
-        self.table = {'tiny': ImageFont.truetype('fonts/truetype/freefont/FreeSansBold.ttf', tinysize),
-                      'small': ImageFont.truetype('fonts/truetype/freefont/FreeSansBold.ttf', smallsize),
-                      'large': ImageFont.truetype('fonts/truetype/freefont/FreeSansBold.ttf', largesize)}
+
+        fontfile = None
+        for bd in fontbasedirs:
+            f = os.path.join(bd, 'fonts/truetype/freefont/FreeSansBold.ttf')
+            if os.path.exists(f):
+                fontfile = f
+                break
+        self.table = {'tiny': ImageFont.truetype(fontfile, tinysize),
+                      'small': ImageFont.truetype(fontfile, smallsize),
+                      'large': ImageFont.truetype(fontfile, largesize)}
     def fetch(self, name):
         if name in self.table:
             return self.table[name]

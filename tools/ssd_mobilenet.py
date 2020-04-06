@@ -11,7 +11,7 @@ import tensorflow as tf
 class SSDMobileNet:
   def __init__(self,model_path,label_path,num_threads=None):
     self.interpreter = tf.lite.Interpreter(model_path)
-    if num_threads is not None:
+    if num_threads is not None and hasattr(self.interpreter, 'set_num_threads'):
         self.interpreter.set_num_threads(num_threads)
     self.interpreter.allocate_tensors()
     self.input_details = self.interpreter.get_input_details()
