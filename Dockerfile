@@ -1,4 +1,4 @@
-FROM tensorflow/tensorflow:1.15.0-gpu-py3
+FROM tensorflow/tensorflow:1.15.2-gpu-py3
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update -y # && apt-get upgrade -y
@@ -10,7 +10,7 @@ RUN apt-get install -y \
             python3-opencv \
             vim less wget
 
-RUN pip3 install keras # opencv-contrib-python
+RUN pip3 install keras
 
 RUN mkdir -p /tracker/model_data
 
