@@ -17,8 +17,8 @@ from PIL import Image
 from PIL import ImageDraw
 from PIL import ImageFont
 
-from ssd_mobilenet import SSD_MOBILENET
-from intersection import any_intersection, intersection
+from tools.ssd_mobilenet import SSD_MOBILENET
+from tools.intersection import any_intersection, intersection
 
 from deep_sort import preprocessing
 from deep_sort import nn_matching
