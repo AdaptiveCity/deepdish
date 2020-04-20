@@ -85,7 +85,10 @@ class SSDMobileNet:
     for i in range(4):
       output.append(np.squeeze(self.interpreter.get_tensor(output_arrays[i]['index'])))
 
+    indices = np.where(np.isnan(output[2]))
+    output[2][indices] = 0 # Zero-out the NaNs for the purpose of this test
     indices = np.where(output[2] >= confidence)
+
     reorder = [1,0,3,2]
     if original_image_size is not None:
       w, h = original_image_size
