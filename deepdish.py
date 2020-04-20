@@ -318,8 +318,13 @@ class Pipeline:
 
                 # Filter object detection boxes, including only those with areas of motion
                 boxes = []
+                max_x, max_y = self.args.camera_width, self.args.camera_height
                 for (x,y,w,h) in boxes0:
-                    x, y, w, h = int(x), int(y), int(w), int(h)
+                    if np.any(np.isnan(boxes0)):
+                        # Drop any rubbish results
+                        continue
+                    x, y = int(np.clip(x,0,max_x)), int(np.clip(y,0,max_y))
+                    w, h = int(np.clip(w,0,max_x-x)), int(np.clip(h,0,max_y-y))
                     # Check if the box includes any detected motion
                     if np.any(fgMask[x:x+w,y:y+h]):
                         boxes.append((x,y,w,h))
