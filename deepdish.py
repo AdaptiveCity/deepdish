@@ -592,10 +592,22 @@ async def main():
     cmdserver, protocol = await loop.create_datagram_endpoint(
         lambda: CommandServer(pipeline),
         local_addr=('127.0.0.1', args.control_port))
-    await pipeline.start()
-    for p in asyncio.Task.all_tasks():
-        p.cancel()
-    # await loop.run_until_complete(asyncio.Task.all_tasks())
+
+    # signal handlers
+    def shutdown():
+        pipeline.running = False
+        # When the pipeline finishes, cancel remaining tasks
+        for p in asyncio.Task.all_tasks():
+            p.cancel()
+
+    loop.add_signal_handler(signal.SIGINT, shutdown)
+    loop.add_signal_handler(signal.SIGTERM, shutdown)
+    loop.add_signal_handler(signal.SIGHUP, shutdown)
+
+    # Kickstart the main pipeline
+    asyncio.ensure_future(pipeline.start())
+
+    # await loop.run_until_complete(asyncio.Task.all_tasks()) # doesn't seem to be needed
 
 @webapp.after_serving
 async def shutdown():
