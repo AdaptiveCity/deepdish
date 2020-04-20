@@ -542,7 +542,7 @@ def get_arguments():
     parser.add_argument('--deepsorthome', help='Location of model_data directory',
                         metavar='PATH', default=None)
     parser.add_argument('--camera-flip', help='Flip the camera image vertically',
-                        default=False, type=bool)
+                        default=False, action='store_true')
     parser.add_argument('--camera-width', help='Camera resolution width in pixels',
                         default=640, type=int)
     parser.add_argument('--camera-height', help='Camera resolution height in pixels',
