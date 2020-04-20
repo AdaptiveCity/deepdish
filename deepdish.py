@@ -192,11 +192,11 @@ class CountingStats:
 class Pipeline:
     """Object detection and tracking pipeline"""
 
-    def __init__(self, args, input=None):
+    def __init__(self, args):
         self.args = args
 
         # Initialise camera & camera viewport
-        self.init_camera(input)
+        self.init_camera()
         # Initialise output
         self.init_output(self.args.output)
 
@@ -227,11 +227,15 @@ class Pipeline:
 
         self.loop = asyncio.get_event_loop()
 
-    def init_camera(self, input):
-        if input is None:
-            self.input = self.args.input
+    def init_camera(self):
+        self.input = self.args.input
+        if self.input is None:
+            self.input = self.args.camera
+            # Allow live camera frames to be dropped
+            self.everyframe = None
         else:
-            self.input = input
+            # Capture every frame from the video file
+            self.everyframe = asyncio.Event()
         self.cap = cv2.VideoCapture(self.input)
 
         # Configure the 'counting line' in the camera viewport
@@ -259,13 +263,29 @@ class Pipeline:
         try:
             with concurrent.futures.ThreadPoolExecutor() as pool:
                 while self.running:
+                    frame = None
+                    # Fetch next frame
                     (frame, t_frame) = await self.loop.run_in_executor(pool, self.read_frame)
-                    #print(frame)
                     if frame is None:
-                        print('Frame is None')
+                        print('No more frames.')
+                        self.running = False
                         break
+
+                    if self.args.camera_flip:
+                        # If we need to flip the image vertically
+                        frame = cv2.flip(frame, 0)
+                    # Ensure frame is proper size
+                    frame = cv2.resize(frame, (self.args.camera_width, self.args.camera_height))
+
                     await q.put((frame, t_frame))
                     await asyncio.sleep(1.0/30.0)
+
+                    # If we are ensuring every frame is processed then wait for
+                    # synchronising event to be triggered
+                    if self.everyframe is not None:
+                        await self.everyframe.wait()
+                        self.everyframe.clear()
+
         finally:
             self.cap.release()
 
@@ -286,10 +306,6 @@ class Pipeline:
 
                 # Obtain next video frame
                 (frame, t_frame) = await q_in.get()
-
-                if self.args.camera_flip:
-                    # If we need to flip the image vertically
-                    frame = cv2.flip(frame, 0)
 
                 # Apply background subtraction to find image-mask of areas of motion
                 fgMask = backSub.apply(frame)
@@ -442,7 +458,11 @@ class Pipeline:
 
                 self.text_output(sys.stdout, elements)
 
-                await asyncio.sleep(1.0 / 30.0) # FIXME
+                if self.everyframe is not None:
+                    # Notify other side that this frame is completely processed
+                    self.everyframe.set()
+
+                await asyncio.sleep(1.0 / 30.0) # FIXME: should not be needed
         finally:
             self.output.release()
 
@@ -483,7 +503,9 @@ def get_arguments():
     basedir = os.getenv('DEEPDISHHOME','.')
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input', help="input MP4 file for video file input",
+    parser.add_argument('--camera', help="camera number for live input (OpenCV numbering)",
+                        metavar='N', default=0, type=int)
+    parser.add_argument('--input', help="input MP4 file for video file input (instead of camera)",
                         default=None)
     parser.add_argument('--output', help="output file with annotated video frames",
                         default=None)
