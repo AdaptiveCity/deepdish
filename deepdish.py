@@ -30,15 +30,57 @@ from deep_sort.detection import Detection as ddet
 import asyncio
 import concurrent.futures
 
-from quart import Quart, current_app
+from quart import Quart, Response, current_app
 
 
 webapp = Quart(__name__)
 
-@webapp.route('/')
-async def hello():
-    pipeline = current_app.config.pipeline
-    return 'hello'
+class StreamingInfo:
+    def __init__(self):
+        self.lock = asyncio.Lock()
+        self.frame = None
+    async def get_frame(self):
+        async with self.lock:
+            return self.frame
+    async def set_frame(self, frame):
+        async with self.lock:
+            self.frame = frame
+
+streaminfo = StreamingInfo()
+
+async def generate(si):
+    # loop over frames from the output stream
+    while True:
+        await asyncio.sleep(0.03) #FIXME: is this necessary?
+        # wait until the lock is acquired
+        frame = await si.get_frame()
+        # check if the output frame is available, otherwise skip
+        # the iteration of the loop
+        if frame is None:
+            continue
+
+        t1=time.time()
+        # encode the frame in JPEG format
+        (flag, encodedImage) = cv2.imencode(".jpg", frame)
+        t2=time.time()
+        #print("imencode={:.0f}ms".format((t2-t1)*1000))
+
+        # ensure the frame was successfully encoded
+        if not flag:
+            continue
+
+        # yield the output frame in the byte format
+        t1=time.time()
+        yield(b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' +
+                bytearray(encodedImage) + b'\r\n')
+        t2=time.time()
+        #print("yield={:.0f}ms".format((t2-t1)*1000))
+
+@webapp.route("/")
+async def video_feed():
+    # return the response generated along with the specific media
+    # type (mime type)
+    return Response(generate(streaminfo), mimetype = "multipart/x-mixed-replace; boundary=frame")
 
 
 class FreshQueue(asyncio.Queue):
@@ -413,7 +455,7 @@ class Pipeline:
 
             await q_out.put(elements)
 
-    def graphical_output(self, render : RenderInfo, elements, output_wh : (int, int)):
+    async def graphical_output(self, render : RenderInfo, elements, output_wh : (int, int)):
         (output_w, output_h) = output_wh
 
         # Clear screen
@@ -443,6 +485,7 @@ class Pipeline:
             except:
                 print('failed to write to framebuffer device {} ...disabling it.'.format(self.framebufdev))
                 self.framebufdev = None
+        await streaminfo.set_frame(outputrgb)
 
         #cv2.imshow('main', outputrgb)
 
@@ -463,7 +506,7 @@ class Pipeline:
             while self.running:
                 elements = await q_in.get()
 
-                self.graphical_output(render, elements, (output_w, output_h))
+                await self.graphical_output(render, elements, (output_w, output_h))
 
                 for e in elements:
                     if isinstance(e, FrameInfo):
