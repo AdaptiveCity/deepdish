@@ -254,6 +254,7 @@ class Pipeline:
         self.backbuf = Image.new("RGBA", (w, h), (0,0,0,0))
         self.draw = ImageDraw.Draw(self.backbuf)
         self.output = cv2.VideoWriter(self.args.output,fourcc, fps, (w, h))
+        self.framebufdev = self.args.framebuffer
 
     def read_frame(self):
         ret, frame = self.cap.read()
@@ -433,7 +434,16 @@ class Pipeline:
         else:
             outputrgba = backarray
         outputrgb = cv2.cvtColor(outputrgba, cv2.COLOR_RGBA2RGB)
-        self.output.write(outputrgb)
+        if self.output is not None:
+            self.output.write(outputrgb)
+        if self.framebufdev is not None:
+            try:
+                with open(self.framebufdev, 'wb') as buf:
+                    buf.write(outputrgb)
+            except:
+                print('failed to write to framebuffer device {} ...disabling it.'.format(self.framebufdev))
+                self.framebufdev = None
+
         #cv2.imshow('main', outputrgb)
 
     def text_output(self, handle, elements):
