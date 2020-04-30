@@ -29,6 +29,8 @@ from deep_sort.detection import Detection as ddet
 
 import asyncio
 import concurrent.futures
+from gmqtt import Client as MQTTClient
+import json
 
 from quart import Quart, Response, current_app
 
@@ -267,7 +269,20 @@ class Pipeline:
         self.poscount = 0
         self.negcount = 0
 
+        self.mqtt = None
+        self.topic = self.args.mqtt_topic
+        self.mqtt_acp_id = self.args.mqtt_acp_id
+
         self.loop = asyncio.get_event_loop()
+
+    async def init_mqtt(self):
+        if self.args.mqtt_broker is not None:
+            self.mqtt = MQTTClient('deepdish')
+            if self.args.mqtt_user is not None:
+                self.mqtt.set_auth_credentials(self.args.mqtt_user, self.args.mqtt_pass)
+            await self.mqtt.connect(self.args.mqtt_broker)
+            if self.topic is None:
+                self.topic = 'default/topic'
 
     def init_camera(self):
         self.input = self.args.input
@@ -443,7 +458,7 @@ class Pipeline:
                             self.poscount+=1
                         else:
                             self.negcount+=1
-                        # send_mqtt_msg(frameCapTime)
+                        await self.publish_to_mqtt(elements)
 
                 elements.append(TrackedObject(bbox, str(track.track_id)))
 
@@ -454,6 +469,14 @@ class Pipeline:
             elements.append(CountingStats(self.negcount, self.poscount))
 
             await q_out.put(elements)
+
+    async def publish_to_mqtt(self, elements):
+        for e in elements:
+            if isinstance(e, FrameInfo):
+                t_frame = e.t_frame
+                break
+        payload = json.dumps({'acp_ts': t_frame, 'acp_id': self.mqtt_acp_id, 'poscount': self.poscount, 'negcount': self.negcount, 'diff': self.poscount - self.negcount})
+        self.mqtt.publish(self.topic, payload)
 
     async def graphical_output(self, render : RenderInfo, elements, output_wh : (int, int)):
         (output_w, output_h) = output_wh
@@ -547,16 +570,6 @@ class Pipeline:
         await self.capture(cameraQueue)
         self.running = False
 
-# MODEL = 'ssdmobilenetv1.tflite'
-# LABELS = 'labelmap.txt'
-# NUM_THREADS = 1
-# MAX_COSINE_DISTANCE = 0.6
-# NMS_MAX_OVERLAP = 0.9
-# ENCODER_MODEL = 'mars-64x32x3.pb'
-# MAX_IOU_DISTANCE = 0.7
-# MAX_AGE = 30
-# INPUT='mot17-03.mp4'
-
 def get_arguments():
     basedir = os.getenv('DEEPDISHHOME','.')
 
@@ -608,6 +621,16 @@ def get_arguments():
                         default=None)
     parser.add_argument('--control-port', help='UDP port for control console.',
                         default=9090, type=int, metavar='PORT')
+    parser.add_argument('--mqtt-broker', help='hostname of MQTT broker',
+                        default=None, metavar='HOST')
+    parser.add_argument('--mqtt-acp-id', help='ACP identity of this MQTT publisher',
+                        default=None, metavar='ID')
+    parser.add_argument('--mqtt-user', help='username for MQTT login',
+                        default=None, metavar='USER')
+    parser.add_argument('--mqtt-pass', help='password for MQTT login',
+                        default=None, metavar='PASS')
+    parser.add_argument('--mqtt-topic', help='topic for MQTT message',
+                        default=None, metavar='TOPIC')
     args = parser.parse_args()
 
     if args.deepsorthome is None:
@@ -641,6 +664,7 @@ async def main():
     loop = asyncio.get_event_loop()
     args = get_arguments()
     pipeline = Pipeline(args)
+    await pipeline.init_mqtt()
     current_app.config.pipeline = pipeline
     cmdserver, protocol = await loop.create_datagram_endpoint(
         lambda: CommandServer(pipeline),
