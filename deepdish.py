@@ -354,7 +354,6 @@ class Pipeline:
                     frame = cv2.resize(frame, (self.args.camera_width, self.args.camera_height))
 
                     await q.put((frame, t_frame))
-                    await asyncio.sleep(1.0/30.0)
 
                     # If we are ensuring every frame is processed then wait for
                     # synchronising event to be triggered
@@ -562,7 +561,6 @@ class Pipeline:
                     # Notify other side that this frame is completely processed
                     self.everyframe.set()
 
-                await asyncio.sleep(1.0 / 30.0) # FIXME: should not be needed
         finally:
             self.output.release()
 
