@@ -4,6 +4,7 @@
 from __future__ import division, print_function, absolute_import
 
 import os
+import re
 import io
 from timeit import time
 import warnings
@@ -34,6 +35,9 @@ import json
 
 from quart import Quart, Response, current_app
 
+class Error(Exception):
+    def __init__(self, msg):
+        self.message = msg
 
 webapp = Quart(__name__)
 
@@ -312,6 +316,20 @@ class Pipeline:
         self.draw = ImageDraw.Draw(self.backbuf)
         self.output = cv2.VideoWriter(self.args.output,fourcc, fps, (w, h))
         self.framebufdev = self.args.framebuffer
+        (w, h) = (self.args.framebuffer_width, self.args.framebuffer_height)
+        fbX = self.framebufdev[-3:]
+
+        vsizefile = '/sys/class/graphics/{}/virtual_size'.format(fbX)
+        if not os.path.exists(self.framebufdev) or not os.path.exists(vsizefile):
+            raise Error('Invalid framebuffer device: {}'.format(self.framebufdev))
+
+        if w is None or h is None:
+            nums = re.findall('(.*),(.*)', open(vsizefile).read())[0]
+            if w is None:
+                w = int(nums[0])
+            if h is None:
+                h = int(nums[1])
+        self.framebufres = (w, h)
 
     def read_frame(self):
         ret, frame = self.cap.read()
@@ -502,9 +520,10 @@ class Pipeline:
         if self.output is not None:
             self.output.write(outputrgb)
         if self.framebufdev is not None:
+            outputfbuf = cv2.resize(outputrgba, self.framebufres)
             try:
                 with open(self.framebufdev, 'wb') as buf:
-                    buf.write(outputrgb)
+                    buf.write(outputfbuf)
             except:
                 print('failed to write to framebuffer device {} ...disabling it.'.format(self.framebufdev))
                 self.framebufdev = None
@@ -593,6 +612,10 @@ def get_arguments():
                         required=False, action='store_true')
     parser.add_argument('--framebuffer', '-F', help='Framebuffer device',
                         default='/dev/fb0', metavar='DEVICE')
+    parser.add_argument('--framebuffer-width', help='Framebuffer device resolution (width) override',
+                        default=None, metavar='WIDTH')
+    parser.add_argument('--framebuffer-height', help='Framebuffer device resolution (height) override',
+                        default=None, metavar='HEIGHT')
     parser.add_argument('--color-mode', help='Color mode for framebuffer, default: RGBA (see OpenCV docs)',
                         default=None, metavar='MODE')
     parser.add_argument('--max-cosine-distance', help='Max cosine distance', metavar='N',
