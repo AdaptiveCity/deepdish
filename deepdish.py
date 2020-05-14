@@ -276,6 +276,7 @@ class Pipeline:
         self.mqtt = None
         self.topic = self.args.mqtt_topic
         self.mqtt_acp_id = self.args.mqtt_acp_id
+        self.heartbeat_delay_secs = self.args.heartbeat_delay_secs
 
         self.loop = asyncio.get_event_loop()
 
@@ -473,9 +474,11 @@ class Pipeline:
                         elements.append(TrackedPathIntersection(pts[-4:]))
                         if cp >= 0:
                             self.poscount+=1
+                            crossing_type = 'pos'
                         else:
                             self.negcount+=1
-                        await self.publish_to_mqtt(elements)
+                            crossing_type = 'neg'
+                        await self.publish_crossing_event_to_mqtt(elements, crossing_type)
 
                 elements.append(TrackedObject(bbox, str(track.track_id)))
 
@@ -487,13 +490,19 @@ class Pipeline:
 
             await q_out.put(elements)
 
-    async def publish_to_mqtt(self, elements):
+    async def publish_crossing_event_to_mqtt(self, elements, crossing_type):
         for e in elements:
             if isinstance(e, FrameInfo):
                 t_frame = e.t_frame
                 break
-        payload = json.dumps({'acp_ts': t_frame, 'acp_id': self.mqtt_acp_id, 'poscount': self.poscount, 'negcount': self.negcount, 'diff': self.poscount - self.negcount})
+        payload = json.dumps({'acp_ts': str(t_frame), 'acp_id': self.mqtt_acp_id, 'acp_event': 'crossing', 'acp_event_value': crossing_type, 'poscount': self.poscount, 'negcount': self.negcount, 'diff': self.poscount - self.negcount})
         self.mqtt.publish(self.topic, payload)
+
+    async def periodic_mqtt_heartbeat(self):
+        while True:
+            payload = json.dumps({'acp_ts': str(time.time()), 'acp_id': self.mqtt_acp_id, 'poscount': self.poscount, 'negcount': self.negcount, 'diff': self.poscount - self.negcount})
+            self.mqtt.publish(self.topic, payload)
+            await asyncio.sleep(self.heartbeat_delay_secs)
 
     async def graphical_output(self, render : RenderInfo, elements, output_wh : (int, int)):
         (output_w, output_h) = output_wh
@@ -652,6 +661,8 @@ def get_arguments():
                         default=None, metavar='PASS')
     parser.add_argument('--mqtt-topic', help='topic for MQTT message',
                         default=None, metavar='TOPIC')
+    parser.add_argument('--heartbeat-delay-secs', help='seconds between heartbeat MQTT updates',
+                        default=60*5, metavar='SECS', type=int)
     args = parser.parse_args()
 
     if args.deepsorthome is None:
@@ -704,6 +715,7 @@ async def main():
 
     # Kickstart the main pipeline
     asyncio.ensure_future(pipeline.start())
+    asyncio.ensure_future(pipeline.periodic_mqtt_heartbeat())
 
     # await loop.run_until_complete(asyncio.Task.all_tasks()) # doesn't seem to be needed
 
