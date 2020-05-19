@@ -401,6 +401,10 @@ class Pipeline:
                         continue
                     x, y = int(np.clip(x,0,max_x)), int(np.clip(y,0,max_y))
                     w, h = int(np.clip(w,0,max_x-x)), int(np.clip(h,0,max_y-y))
+                    # Check if the box is almost as large as the camera viewport
+                    if w * h > 0.9 * max_x * max_y:
+                        # reject as spurious
+                        continue
                     # Check if the box includes any detected motion
                     if np.any(fgMask[x:x+w,y:y+h]):
                         boxes.append((x,y,w,h))
