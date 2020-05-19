@@ -85,8 +85,14 @@ class SSDMobileNet:
     for i in range(4):
       output.append(np.squeeze(self.interpreter.get_tensor(output_arrays[i]['index'])))
 
+    # Check boxes for NaNs
+    indices = np.where(np.isnan(output[0]))
+    output[2][np.reshape(indices,-1)] = 0 # Zero-out the NaNs for the purpose of this test
+    # Check scores for NaNs
     indices = np.where(np.isnan(output[2]))
     output[2][indices] = 0 # Zero-out the NaNs for the purpose of this test
+
+    # Obtain indices of sufficiently certain object identifications
     indices = np.where(output[2] >= confidence)
 
     reorder = [1,0,3,2]
@@ -94,8 +100,8 @@ class SSDMobileNet:
       w, h = original_image_size
     else:
       w, h = (self.width, self.height)
+
     boxes = output[0][indices][:,reorder] * [w,h,w,h]
-    # import pdb; pdb.set_trace()
     labels = output[1][indices]
     scores = output[2][indices]
     # If the model is quantized (uint8 data), then dequantize the results
