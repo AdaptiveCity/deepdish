@@ -342,6 +342,11 @@ class Pipeline:
         ret, frame = self.cap.read()
         return (frame, time.time())
 
+    def shutdown(self):
+        self.running = False
+        for p in asyncio.Task.all_tasks():
+            p.cancel()
+
     async def capture(self, q):
         try:
             with concurrent.futures.ThreadPoolExecutor() as pool:
@@ -351,7 +356,7 @@ class Pipeline:
                     (frame, t_frame) = await self.loop.run_in_executor(pool, self.read_frame)
                     if frame is None:
                         print('No more frames.')
-                        self.running = False
+                        self.shutdown()
                         break
 
                     if self.args.camera_flip:
