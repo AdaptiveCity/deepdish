@@ -501,18 +501,20 @@ class Pipeline:
             await q_out.put(elements)
 
     async def publish_crossing_event_to_mqtt(self, elements, crossing_type):
-        for e in elements:
-            if isinstance(e, FrameInfo):
-                t_frame = e.t_frame
-                break
-        payload = json.dumps({'acp_ts': str(t_frame), 'acp_id': self.mqtt_acp_id, 'acp_event': 'crossing', 'acp_event_value': crossing_type, 'poscount': self.poscount, 'negcount': self.negcount, 'diff': self.poscount - self.negcount})
-        self.mqtt.publish(self.topic, payload)
+        if self.mqtt is not None:
+            for e in elements:
+                if isinstance(e, FrameInfo):
+                    t_frame = e.t_frame
+                    break
+            payload = json.dumps({'acp_ts': str(t_frame), 'acp_id': self.mqtt_acp_id, 'acp_event': 'crossing', 'acp_event_value': crossing_type, 'poscount': self.poscount, 'negcount': self.negcount, 'diff': self.poscount - self.negcount})
+            self.mqtt.publish(self.topic, payload)
 
     async def periodic_mqtt_heartbeat(self):
-        while True:
-            payload = json.dumps({'acp_ts': str(time.time()), 'acp_id': self.mqtt_acp_id, 'poscount': self.poscount, 'negcount': self.negcount, 'diff': self.poscount - self.negcount})
-            self.mqtt.publish(self.topic, payload)
-            await asyncio.sleep(self.heartbeat_delay_secs)
+        if self.mqtt is not None:
+            while True:
+                payload = json.dumps({'acp_ts': str(time.time()), 'acp_id': self.mqtt_acp_id, 'poscount': self.poscount, 'negcount': self.negcount, 'diff': self.poscount - self.negcount})
+                self.mqtt.publish(self.topic, payload)
+                await asyncio.sleep(self.heartbeat_delay_secs)
 
     async def graphical_output(self, render : RenderInfo, elements, output_wh : (int, int)):
         (output_w, output_h) = output_wh
