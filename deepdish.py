@@ -316,21 +316,27 @@ class Pipeline:
         self.backbuf = Image.new("RGBA", (w, h), (0,0,0,0))
         self.draw = ImageDraw.Draw(self.backbuf)
         self.output = cv2.VideoWriter(self.args.output,fourcc, fps, (w, h))
-        self.framebufdev = self.args.framebuffer
-        (w, h) = (self.args.framebuffer_width, self.args.framebuffer_height)
-        fbX = self.framebufdev[-3:]
+        if self.args.no_framebuffer:
+            self.framebufdev = None
+        else:
+            self.framebufdev = self.args.framebuffer
+            fbX = self.framebufdev[-3:]
 
-        vsizefile = '/sys/class/graphics/{}/virtual_size'.format(fbX)
-        if not os.path.exists(self.framebufdev) or not os.path.exists(vsizefile):
-            raise Error('Invalid framebuffer device: {}'.format(self.framebufdev))
+            vsizefile = '/sys/class/graphics/{}/virtual_size'.format(fbX)
+            if not os.path.exists(self.framebufdev) or not os.path.exists(vsizefile):
+                #raise Error('Invalid framebuffer device: {}'.format(self.framebufdev))
+                print('Invalid framebuffer device: {}'.format(self.framebufdev))
+                self.framebufdev = None
 
-        if w is None or h is None:
-            nums = re.findall('(.*),(.*)', open(vsizefile).read())[0]
-            if w is None:
-                w = int(nums[0])
-            if h is None:
-                h = int(nums[1])
-        self.framebufres = (w, h)
+        if self.framebufdev is not None:
+            (w, h) = (self.args.framebuffer_width, self.args.framebuffer_height)
+            if w is None or h is None:
+                nums = re.findall('(.*),(.*)', open(vsizefile).read())[0]
+                if w is None:
+                    w = int(nums[0])
+                if h is None:
+                    h = int(nums[1])
+            self.framebufres = (w, h)
 
     def read_frame(self):
         ret, frame = self.cap.read()
@@ -619,7 +625,7 @@ def get_arguments():
     parser.add_argument('--encoder-batch-size', help='Batch size for feature encoder inference',
                         default=32, type=int, metavar='N')
     parser.add_argument('--labels', help='File path of labels file.', required=True)
-    parser.add_argument('--no-framebuf', help='Disable framebuffer display',
+    parser.add_argument('--no-framebuffer', help='Disable framebuffer display',
                         required=False, action='store_true')
     parser.add_argument('--framebuffer', '-F', help='Framebuffer device',
                         default='/dev/fb0', metavar='DEVICE')
