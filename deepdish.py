@@ -263,6 +263,8 @@ class Pipeline:
 
         self.encoder = gdet.create_box_encoder(model_filename,batch_size=self.args.encoder_batch_size)
 
+        self.background_subtraction = not self.args.disable_background_subtraction
+
         # Initialise tracker
         nn_budget = None
         metric = nn_matching.NearestNeighborDistanceMetric("cosine", self.args.max_cosine_distance, nn_budget)
@@ -398,7 +400,8 @@ class Pipeline:
 
                 t_frame_recv = time()
                 # Apply background subtraction to find image-mask of areas of motion
-                fgMask = backSub.apply(frame)
+                if self.background_subtraction:
+                    fgMask = backSub.apply(frame)
 
                 # Convert to PIL Image
                 image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGRA2RGBA))
@@ -422,7 +425,7 @@ class Pipeline:
                         # reject as spurious
                         continue
                     # Check if the box includes any detected motion
-                    if np.any(fgMask[x:x+w,y:y+h]):
+                    if not self.background_subtraction or np.any(fgMask[x:x+w,y:y+h]):
                         boxes.append((x,y,w,h))
                 t2 = time()
 
@@ -713,6 +716,8 @@ def get_arguments():
                         default=None, metavar='TOPIC')
     parser.add_argument('--heartbeat-delay-secs', help='seconds between heartbeat MQTT updates',
                         default=60*5, metavar='SECS', type=int)
+    parser.add_argument('--disable-background-subtraction', help='Disable background subtraction / motion detection',
+                        default=False, action='store_true')
     args = parser.parse_args()
 
     if args.deepsorthome is None:
