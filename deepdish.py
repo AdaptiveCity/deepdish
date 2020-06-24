@@ -402,6 +402,7 @@ class Pipeline:
 
                 # Convert to PIL Image
                 image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGRA2RGBA))
+                t_backsub = time()
 
                 # Run object detection engine within a Thread Pool
                 (boxes0, delta_t) = await self.loop.run_in_executor(pool, self.run_object_detector, image)
@@ -430,6 +431,7 @@ class Pipeline:
                             CameraImage(image),
                             CameraCountLine(self.cameracountline),
                             TimingInfo('Frame / queue item received latency', 'q1', t_frame_recv - t_frame),
+                            TimingInfo('Background subtraction latency', 'bsub', t_backsub - t_frame_recv),
                             TimingInfo('Object detection latency', 'objd', delta_t+(t2-t1))]
                 await q_out.put((frame, boxes, elements, time()))
 
