@@ -7,6 +7,7 @@ import os
 import re
 import io
 from timeit import time
+from time import time
 import warnings
 import sys
 import argparse
@@ -65,10 +66,10 @@ async def generate(si):
         if frame is None:
             continue
 
-        t1=time.time()
+        t1=time()
         # encode the frame in JPEG format
         (flag, encodedImage) = cv2.imencode(".jpg", frame)
-        t2=time.time()
+        t2=time()
         #print("imencode={:.0f}ms".format((t2-t1)*1000))
 
         # ensure the frame was successfully encoded
@@ -76,10 +77,10 @@ async def generate(si):
             continue
 
         # yield the output frame in the byte format
-        t1=time.time()
+        t1=time()
         yield(b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' +
                 bytearray(encodedImage) + b'\r\n')
-        t2=time.time()
+        t2=time()
         #print("yield={:.0f}ms".format((t2-t1)*1000))
 
 @webapp.route("/")
@@ -341,7 +342,7 @@ class Pipeline:
 
     def read_frame(self):
         ret, frame = self.cap.read()
-        return (frame, time.time())
+        return (frame, time())
 
     def shutdown(self):
         self.running = False
@@ -378,9 +379,9 @@ class Pipeline:
             self.cap.release()
 
     def run_object_detector(self, image):
-        t1 = time.time()
+        t1 = time()
         boxes = self.object_detector.detect_image(image)
-        t2 = time.time()
+        t2 = time()
         return (boxes, t2 - t1)
 
     async def detect_objects(self, q_in, q_out):
@@ -405,6 +406,7 @@ class Pipeline:
                 (boxes0, delta_t) = await self.loop.run_in_executor(pool, self.run_object_detector, image)
 
                 # Filter object detection boxes, including only those with areas of motion
+                t1 = time()
                 boxes = []
                 max_x, max_y = self.args.camera_width, self.args.camera_height
                 for (x,y,w,h) in boxes0:
@@ -518,7 +520,7 @@ class Pipeline:
     async def periodic_mqtt_heartbeat(self):
         if self.mqtt is not None:
             while True:
-                payload = json.dumps({'acp_ts': str(time.time()), 'acp_id': self.mqtt_acp_id, 'poscount': self.poscount, 'negcount': self.negcount, 'diff': self.poscount - self.negcount})
+                payload = json.dumps({'acp_ts': str(time()), 'acp_id': self.mqtt_acp_id, 'poscount': self.poscount, 'negcount': self.negcount, 'diff': self.poscount - self.negcount})
                 self.mqtt.publish(self.topic, payload)
                 await asyncio.sleep(self.heartbeat_delay_secs)
 
@@ -581,7 +583,7 @@ class Pipeline:
                     if isinstance(e, FrameInfo):
                         t_frame = e.t_frame
                         break
-                elements.append(TimingInfo('Overall latency', 'overall', time.time() - t_frame))
+                elements.append(TimingInfo('Overall latency', 'overall', time() - t_frame))
 
                 self.text_output(sys.stdout, elements)
 
