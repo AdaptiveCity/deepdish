@@ -5,12 +5,12 @@ from PIL import ImageDraw
 from PIL import ImageFont
 from PIL import ImageColor
 import numpy as np
-#from tflite_runtime.interpreter import Interpreter
-import tensorflow as tf
+import tflite_runtime.interpreter as tflite
 
 class SSDMobileNet:
   def __init__(self,model_path,label_path,num_threads=None):
-    self.interpreter = tf.lite.Interpreter(model_path)
+    delegate = tflite.load_delegate('libedgetpu.so.1')
+    self.interpreter = tflite.Interpreter(model_path, experimental_delegates=[delegate])
     if num_threads is not None and hasattr(self.interpreter, 'set_num_threads'):
         self.interpreter.set_num_threads(num_threads)
     self.interpreter.allocate_tensors()
