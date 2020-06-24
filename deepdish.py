@@ -251,7 +251,8 @@ class Pipeline:
         # Initialise object detector (for some reason it has to happen
         # here & not within detect_objects(), or else the inference engine
         # gets upset and starts throwing NaNs at me. Thanks, Python.)
-        self.object_detector = SSD_MOBILENET(wanted_label='person', model_file=self.args.model, label_file=self.args.labels, num_threads=self.args.num_threads)
+        self.object_detector = SSD_MOBILENET(wanted_label='person', model_file=self.args.model, label_file=self.args.labels,
+                num_threads=self.args.num_threads, edgetpu=self.args.edgetpu)
 
         # Initialise feature encoder
         if self.args.encoder_model is None:
@@ -628,6 +629,8 @@ def get_arguments():
                         default=None)
     parser.add_argument('--model', help='File path of object detection .tflite file.',
                         required=True)
+    parser.add_argument('--edgetpu', help='Enable usage of Edge TPU accelerator.',
+                        default=False, action='store_true')
     parser.add_argument('--encoder-model', help='File path of feature encoder .pb file.',
                         required=False)
     parser.add_argument('--encoder-batch-size', help='Batch size for feature encoder inference',

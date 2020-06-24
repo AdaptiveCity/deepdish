@@ -6,11 +6,17 @@ from PIL import ImageFont
 from PIL import ImageColor
 import numpy as np
 import tflite_runtime.interpreter as tflite
+import tensorflow as tf
 
 class SSDMobileNet:
-  def __init__(self,model_path,label_path,num_threads=None):
-    delegate = tflite.load_delegate('libedgetpu.so.1')
-    self.interpreter = tflite.Interpreter(model_path, experimental_delegates=[delegate])
+  def __init__(self,model_path,label_path,num_threads=None,edgetpu=False,libedgetpu=None):
+    if edgetpu:
+      if libedgetpu is None:
+        libedgetpu = 'libedgetpu.so.1'
+      delegate = tflite.load_delegate(libedgetpu)
+      self.interpreter = tflite.Interpreter(model_path, experimental_delegates=[delegate])
+    else:
+      self.interpreter = tf.lite.Interpreter(model_path)
     if num_threads is not None and hasattr(self.interpreter, 'set_num_threads'):
         self.interpreter.set_num_threads(num_threads)
     self.interpreter.allocate_tensors()
@@ -157,12 +163,12 @@ def test():
   ssdm.draw_boxes_and_save(boxes, labels, scores, img, 'output.jpg')
 
 class SSD_MOBILENET():
-  def __init__(self, wanted_label=None, model_file=None, label_file=None, num_threads=None):
+  def __init__(self, wanted_label=None, model_file=None, label_file=None, num_threads=None, edgetpu=False, libedgetpu=None):
     if model_file is None:
         model_file = 'ssd_mobilenet.tflite'
     if label_file is None:
         label_file = 'coco_labelmap.txt'
-    self.ssdm = SSDMobileNet(model_file, label_file, num_threads=num_threads)
+    self.ssdm = SSDMobileNet(model_file, label_file, num_threads=num_threads, edgetpu=edgetpu, libedgetpu=libedgetpu)
     self.wanted_label = wanted_label
   def detect_image(self, img):
     #t0 = time.time()
