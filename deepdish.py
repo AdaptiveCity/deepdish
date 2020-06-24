@@ -58,7 +58,7 @@ streaminfo = StreamingInfo()
 async def generate(si):
     # loop over frames from the output stream
     while True:
-        await asyncio.sleep(0.03) #FIXME: is this necessary?
+        await asyncio.sleep(0.003) #FIXME: is this necessary?
         # wait until the lock is acquired
         frame = await si.get_frame()
         # check if the output frame is available, otherwise skip
@@ -396,6 +396,7 @@ class Pipeline:
                 # Obtain next video frame
                 (frame, t_frame) = await q_in.get()
 
+                t_frame_recv = time()
                 # Apply background subtraction to find image-mask of areas of motion
                 fgMask = backSub.apply(frame)
 
@@ -422,42 +423,53 @@ class Pipeline:
                     # Check if the box includes any detected motion
                     if np.any(fgMask[x:x+w,y:y+h]):
                         boxes.append((x,y,w,h))
+                t2 = time()
 
                 # Send results to next step in pipeline
                 elements = [FrameInfo(t_frame, frameCount),
                             CameraImage(image),
                             CameraCountLine(self.cameracountline),
-                            TimingInfo('Object detection latency', 'objd', delta_t)]
-                await q_out.put((frame, boxes, elements))
+                            TimingInfo('Frame / queue item received latency', 'q1', t_frame_recv - t_frame),
+                            TimingInfo('Object detection latency', 'objd', delta_t+(t2-t1))]
+                await q_out.put((frame, boxes, elements, time()))
 
     async def encode_features(self, q_in, q_out):
         with concurrent.futures.ThreadPoolExecutor() as pool:
             while self.running:
                 # Obtain next video frame and object detection boxes
-                (frame, boxes, elements) = await q_in.get()
+                (frame, boxes, elements, t_prev) = await q_in.get()
 
+                t1 = time()
                 # Run feature encoder within a Thread Pool
                 features = await self.loop.run_in_executor(pool, self.encoder, frame, boxes)
+                t2 = time()
 
                 # Build list of 'Detection' objects and send them to next step in pipeline
                 detections = [Detection(bbox, 1.0, feature) for bbox, feature in zip(boxes, features)]
-                await q_out.put((detections, elements))
+                elements.append(TimingInfo('Q1 / Q2 latency', 'q2', (t1 - t_prev)))
+                elements.append(TimingInfo('Feature encoder latency', 'feat', (t2-t1)))
+                await q_out.put((detections, elements, time()))
 
     async def track_objects(self, q_in, q_out):
         while self.running:
-            (detections, elements) = await q_in.get()
+            (detections, elements, t_prev) = await q_in.get()
+            t1 = time()
             boxes = np.array([d.tlwh for d in detections])
             scores = np.array([d.confidence for d in detections])
             indices = preprocessing.non_max_suppression(boxes, self.args.nms_max_overlap, scores)
             detections = [detections[i] for i in indices]
             self.tracker.predict()
             self.tracker.update(detections)
-            await q_out.put((detections, elements))
+            t2 = time()
+            elements.append(TimingInfo('Q2 / Q3 latency', 'q3', (t1 - t_prev)))
+            elements.append(TimingInfo('Tracker latency', 'trak', (t2-t1)))
+            await q_out.put((detections, elements, time()))
 
     async def process_results(self, q_in, q_out):
         while self.running:
-            (detections, elements) = await(q_in.get())
+            (detections, elements, t_prev) = await(q_in.get())
 
+            t1=time()
             for track in self.tracker.deleted_tracks:
                 i = track.track_id
                 if track.is_deleted():
@@ -505,8 +517,11 @@ class Pipeline:
                 elements.append(DetectedObject(bbox))
 
             elements.append(CountingStats(self.negcount, self.poscount))
+            t2=time()
+            elements.append(TimingInfo('Q3 / Q4 latency', 'q4', (t1-t_prev)))
+            elements.append(TimingInfo('Results processing latency', 'proc', (t2-t1)))
 
-            await q_out.put(elements)
+            await q_out.put((elements,time()))
 
     async def publish_crossing_event_to_mqtt(self, elements, crossing_type):
         if self.mqtt is not None:
@@ -575,15 +590,25 @@ class Pipeline:
 
         try:
             while self.running:
-                elements = await q_in.get()
+                (elements, t_prev) = await q_in.get()
 
+                t1 = time()
                 await self.graphical_output(render, elements, (output_w, output_h))
 
                 for e in elements:
                     if isinstance(e, FrameInfo):
                         t_frame = e.t_frame
                         break
-                elements.append(TimingInfo('Overall latency', 'overall', time() - t_frame))
+                elements.append(TimingInfo('Q4 / Q5 latency', 'q5', t1 - t_prev))
+                elements.append(TimingInfo('Graphical display latency', 'disp', time() - t1))
+                t_sum = 0
+                for e in elements:
+                    if isinstance(e, TimingInfo):
+                        t_sum += e.delta_t
+                elements.append(TimingInfo('Latency sum', 'sum', t_sum))
+                t_e2e = time() - t_frame
+                elements.append(TimingInfo('End to end latency', 'e2e', t_e2e))
+                elements.append(TimingInfo('Missing', 'miss', t_e2e - t_sum))
 
                 self.text_output(sys.stdout, elements)
 
