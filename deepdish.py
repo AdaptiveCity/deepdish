@@ -538,13 +538,14 @@ class Pipeline:
         # Copy backbuf to output
         backarray = np.array(self.backbuf)
         if self.color_mode is not None:
-            outputrgba = cv2.cvtColor(backarray, self.color_mode)
+            outputbgra = cv2.cvtColor(backarray, self.color_mode)
         else:
-            outputrgba = backarray
-        outputrgb = cv2.cvtColor(outputrgba, cv2.COLOR_RGBA2RGB)
+            outputbgra = backarray
+        outputrgb = cv2.cvtColor(outputbgra, cv2.COLOR_BGRA2RGB)
         if self.output is not None:
             self.output.write(outputrgb)
         if self.framebufdev is not None:
+            outputrgba = cv2.cvtColor(outputbgra, cv2.COLOR_BGRA2RGBA)
             outputfbuf = cv2.resize(outputrgba, self.framebufres)
             try:
                 with open(self.framebufdev, 'wb') as buf:
