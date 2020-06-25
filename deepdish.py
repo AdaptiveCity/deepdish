@@ -369,7 +369,7 @@ class Pipeline:
                     # Ensure frame is proper size
                     frame = cv2.resize(frame, (self.args.camera_width, self.args.camera_height))
 
-                    await q.put((frame, t_frame))
+                    await q.put((frame, t_frame, time()))
 
                     # If we are ensuring every frame is processed then wait for
                     # synchronising event to be triggered
@@ -396,7 +396,7 @@ class Pipeline:
                 frameCount += 1
 
                 # Obtain next video frame
-                (frame, t_frame) = await q_in.get()
+                (frame, t_frame, t_prev) = await q_in.get()
 
                 t_frame_recv = time()
                 # Apply background subtraction to find image-mask of areas of motion
@@ -433,7 +433,8 @@ class Pipeline:
                 elements = [FrameInfo(t_frame, frameCount),
                             CameraImage(image),
                             CameraCountLine(self.cameracountline),
-                            TimingInfo('Frame / queue item received latency', 'q1', t_frame_recv - t_frame),
+                            TimingInfo('Frame processing latency', 'fram', t_prev - t_frame),
+                            TimingInfo('Frame / Q1 item received latency', 'q1', t_frame_recv - t_prev),
                             TimingInfo('Background subtraction latency', 'bsub', t_backsub - t_frame_recv),
                             TimingInfo('Object detection latency', 'objd', delta_t+(t2-t1))]
                 await q_out.put((frame, boxes, elements, time()))
