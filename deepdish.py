@@ -31,6 +31,7 @@ from tools import generate_detections as gdet
 from deep_sort.detection import Detection as ddet
 
 import asyncio
+import aiofiles
 import concurrent.futures
 from gmqtt import Client as MQTTClient
 import json
@@ -286,6 +287,10 @@ class Pipeline:
         self.mqtt_acp_id = self.args.mqtt_acp_id
         self.heartbeat_delay_secs = self.args.heartbeat_delay_secs
 
+        self.log = self.args.log
+        if self.log is not None:
+            with open(self.log, mode='w+') as f:
+                f.truncate()
         self.loop = asyncio.get_event_loop()
 
     async def init_mqtt(self):
@@ -519,6 +524,7 @@ class Pipeline:
                             self.negcount+=1
                             crossing_type = 'neg'
                         await self.publish_crossing_event_to_mqtt(elements, crossing_type)
+                        await self.publish_crossing_event_to_log(elements)
 
                 elements.append(TrackedObject(bbox, str(track.track_id)))
 
@@ -541,6 +547,16 @@ class Pipeline:
                     break
             payload = json.dumps({'acp_ts': str(t_frame), 'acp_id': self.mqtt_acp_id, 'acp_event': 'crossing', 'acp_event_value': crossing_type, 'poscount': self.poscount, 'negcount': self.negcount, 'diff': self.poscount - self.negcount})
             self.mqtt.publish(self.topic, payload)
+
+    async def publish_crossing_event_to_log(self, elements):
+        if self.log is not None:
+            for e in elements:
+                if isinstance(e, FrameInfo):
+                    count = e.frame_count
+                    break
+            payload = json.dumps({'frame_count': count, 'poscount': self.poscount, 'negcount': self.negcount, 'diff': self.poscount - self.negcount})
+            async with aiofiles.open(self.log, mode='a+') as f:
+                await f.write(payload + '\n')
 
     async def periodic_mqtt_heartbeat(self):
         if self.mqtt is not None:
@@ -725,6 +741,8 @@ def get_arguments():
                         default=60*5, metavar='SECS', type=int)
     parser.add_argument('--disable-background-subtraction', help='Disable background subtraction / motion detection',
                         default=False, action='store_true')
+    parser.add_argument('--log', help='Log state of parameters in given file as JSON',
+                        default=None, metavar='FILE')
     args = parser.parse_args()
 
     if args.deepsorthome is None:
