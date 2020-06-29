@@ -254,9 +254,9 @@ class Pipeline:
         # here & not within detect_objects(), or else the inference engine
         # gets upset and starts throwing NaNs at me. Thanks, Python.)
         if 'yolo' in self.args.model:
-            self.object_detector = YOLO(wanted_label='person', model_file=self.args.model, label_file=self.args.labels, num_threads=self.args.num_threads)
+            self.object_detector = YOLO(wanted_label=self.args.wanted_label, model_file=self.args.model, label_file=self.args.labels, num_threads=self.args.num_threads)
         else:
-            self.object_detector = SSD_MOBILENET(wanted_label='person', model_file=self.args.model, label_file=self.args.labels,
+            self.object_detector = SSD_MOBILENET(wanted_label=self.args.wanted_label, model_file=self.args.model, label_file=self.args.labels,
                     num_threads=self.args.num_threads, edgetpu=self.args.edgetpu)
 
         # Initialise feature encoder
@@ -691,6 +691,8 @@ def get_arguments():
                         metavar='N', default=0.7, type=float)
     parser.add_argument('--max-age', help='Max age of lost track', metavar='N',
                         default=10, type=int)
+    parser.add_argument('--wanted-label', help='Label of object to count',
+                        metavar='LABEL', default='person')
     parser.add_argument('--num-threads', '-N', help='Number of threads for tensorflow lite',
                         metavar='N', default=4, type=int)
     parser.add_argument('--deepsorthome', help='Location of model_data directory',
