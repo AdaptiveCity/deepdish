@@ -20,6 +20,7 @@ from PIL import ImageDraw
 from PIL import ImageFont
 
 from tools.ssd_mobilenet import SSD_MOBILENET
+from tools.yolo import YOLO
 from tools.intersection import any_intersection, intersection
 
 from deep_sort import preprocessing
@@ -252,8 +253,11 @@ class Pipeline:
         # Initialise object detector (for some reason it has to happen
         # here & not within detect_objects(), or else the inference engine
         # gets upset and starts throwing NaNs at me. Thanks, Python.)
-        self.object_detector = SSD_MOBILENET(wanted_label='person', model_file=self.args.model, label_file=self.args.labels,
-                num_threads=self.args.num_threads, edgetpu=self.args.edgetpu)
+        if 'yolo' in self.args.model:
+            self.object_detector = YOLO(wanted_label='person', model_file=self.args.model, label_file=self.args.labels, num_threads=self.args.num_threads)
+        else:
+            self.object_detector = SSD_MOBILENET(wanted_label='person', model_file=self.args.model, label_file=self.args.labels,
+                    num_threads=self.args.num_threads, edgetpu=self.args.edgetpu)
 
         # Initialise feature encoder
         if self.args.encoder_model is None:
