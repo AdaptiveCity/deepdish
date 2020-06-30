@@ -214,6 +214,15 @@ class CameraImage:
     def do_render(self, render):
         render.buffer.paste(self.image)
 
+class FGMask:
+    def __init__(self, fgMask):
+        self.fgMask = fgMask
+        self.priority = 2
+
+    def do_render(self, render):
+        image = Image.fromarray(self.fgMask)
+        render.buffer.paste(image)
+
 class CountingStats:
     def __init__(self, negcount, poscount):
         self.negcount = negcount
@@ -411,7 +420,8 @@ class Pipeline:
                 # Apply background subtraction to find image-mask of areas of motion
                 if self.background_subtraction:
                     fgMask = backSub.apply(frame)
-
+                    if self.args.enable_background_masking:
+                        frame = cv2.bitwise_and(frame,frame,mask = fgMask)
                 # Convert to PIL Image
                 image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGRA2RGBA))
                 t_backsub = time()
@@ -422,6 +432,7 @@ class Pipeline:
                 # Filter object detection boxes, including only those with areas of motion
                 t1 = time()
                 boxes = []
+
                 max_x, max_y = self.args.camera_width, self.args.camera_height
                 for (x,y,w,h) in boxes0:
                     if np.any(np.isnan(boxes0)):
@@ -434,7 +445,9 @@ class Pipeline:
                         # reject as spurious
                         continue
                     # Check if the box includes any detected motion
-                    if not self.background_subtraction or np.any(fgMask[x:x+w,y:y+h]):
+                    nonzeroes = np.count_nonzero(fgMask[y:y+h,x:x+w])
+                    rat = self.args.background_subtraction_ratio
+                    if not self.background_subtraction or nonzeroes >= rat * w * h:
                         boxes.append((x,y,w,h))
                 t2 = time()
 
@@ -740,6 +753,10 @@ def get_arguments():
     parser.add_argument('--heartbeat-delay-secs', help='seconds between heartbeat MQTT updates',
                         default=60*5, metavar='SECS', type=int)
     parser.add_argument('--disable-background-subtraction', help='Disable background subtraction / motion detection',
+                        default=False, action='store_true')
+    parser.add_argument('--background-subtraction-ratio', help='Ratio (between 0 and 1) of background motion needed to accept object',
+                        default=0.25, metavar='RATIO', type=float)
+    parser.add_argument('--enable-background-masking', help='Enable masking of camera view with background subtraction',
                         default=False, action='store_true')
     parser.add_argument('--log', help='Log state of parameters in given file as JSON',
                         default=None, metavar='FILE')
