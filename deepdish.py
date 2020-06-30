@@ -231,21 +231,28 @@ class CountingStats:
         self.font_fill_negcount = (255, 0, 0)
         self.font_fill_abscount = (0, 255, 0)
         self.font_fill_poscount = (0, 0, 255)
-        self.font = 'large'
+        self.font = 'tiny'
+        self.labels = list(negcount.keys())
+        self.labels.reverse()
 
     def do_render(self, render):
         font = render.fontlib.fetch(self.font)
         [w, h] = render.buffer.size
 
-        (_, dy) = font.getsize(str(self.negcount))
-        render.draw.text((0, h - dy), str(self.negcount), fill=self.font_fill_negcount, font=font)
+        cursor = h
+        for lbl in self.labels:
+            (_, dy) = font.getsize(str(self.negcount[lbl]))
+            cursor -= dy
 
-        abscount = abs(self.negcount-self.poscount)
-        (dx, dy) = font.getsize(str(abscount))
-        render.draw.text(((w - dx)/2, h - dy), str(abscount), fill=self.font_fill_abscount, font=font)
+            render.draw.text((0, cursor), str(self.negcount[lbl]), fill=self.font_fill_negcount, font=font)
 
-        (dx, dy) = font.getsize(str(self.poscount))
-        render.draw.text((w - dx, h - dy), str(self.poscount), fill=self.font_fill_poscount, font=font)
+            #central = str(abs(self.negcount[lbl]-self.poscount[lbl]))
+            central = lbl
+            (dx, dy) = font.getsize(central)
+            render.draw.text(((w - dx)/2, cursor), central, fill=self.font_fill_abscount, font=font)
+
+            (dx, dy) = font.getsize(str(self.poscount[lbl]))
+            render.draw.text((w - dx, cursor), str(self.poscount[lbl]), fill=self.font_fill_poscount, font=font)
 
 ##################################################
 
@@ -289,10 +296,10 @@ class Pipeline:
 
         # Initialise database
         self.db = {}
-        self.delcount = 0
-        self.intcount = 0
-        self.poscount = 0
-        self.negcount = 0
+        self.delcount = dict([(lbl, 0) for lbl in self.wanted_labels])
+        self.intcount = dict([(lbl, 0) for lbl in self.wanted_labels])
+        self.poscount = dict([(lbl, 0) for lbl in self.wanted_labels])
+        self.negcount = dict([(lbl, 0) for lbl in self.wanted_labels])
 
         self.mqtt = None
         self.topic = self.args.mqtt_topic
@@ -505,7 +512,7 @@ class Pipeline:
             for track in self.tracker.deleted_tracks:
                 i = track.track_id
                 if track.is_deleted():
-                    self.check_deleted_track(track.track_id)
+                    self.check_deleted_track(track)
 
             for track in self.tracker.tracks:
                 i = track.track_id
@@ -532,14 +539,14 @@ class Pipeline:
                     q2 = np.array(self.db[i][-2])
                     cp = np.cross(q1 - p1,q2 - p2)
                     if intersection(p1,q1,p2,q2):
-                        self.intcount+=1
+                        self.intcount[lbl]+=1
                         print("track_id={} ({}) just intersected camera countline; cross-prod={}; intcount={}".format(i,lbl,cp,self.intcount))
                         elements.append(TrackedPathIntersection(pts[-4:]))
                         if cp >= 0:
-                            self.poscount+=1
+                            self.poscount[lbl]+=1
                             crossing_type = 'pos'
                         else:
-                            self.negcount+=1
+                            self.negcount[lbl]+=1
                             crossing_type = 'neg'
                         await self.publish_crossing_event_to_mqtt(elements, crossing_type)
                         await self.publish_crossing_event_to_log(elements)
@@ -569,8 +576,11 @@ class Pipeline:
                 if isinstance(e, FrameInfo):
                     t_frame = e.t_frame
                     break
-            payload = json.dumps({'acp_ts': str(t_frame), 'acp_id': self.mqtt_acp_id, 'acp_event': 'crossing', 'acp_event_value': crossing_type, 'poscount': self.poscount, 'negcount': self.negcount, 'diff': self.poscount - self.negcount})
-            self.mqtt.publish(self.topic, payload)
+            payload = {'acp_ts': str(t_frame), 'acp_id': self.mqtt_acp_id, 'acp_event': 'crossing', 'acp_event_value': crossing_type}
+            for lbl in self.wanted_labels:
+                payload.update(dict([('poscount_'+lbl, self.poscount[lbl]), ('negcount_'+lbl, self.negcount[lbl]), ('diff_'+lbl, self.poscount[lbl] - self.negcount[lbl])]))
+
+            self.mqtt.publish(self.topic, json.dumps(payload))
 
     async def publish_crossing_event_to_log(self, elements):
         if self.log is not None:
@@ -578,15 +588,20 @@ class Pipeline:
                 if isinstance(e, FrameInfo):
                     count = e.frame_count
                     break
-            payload = json.dumps({'frame_count': count, 'poscount': self.poscount, 'negcount': self.negcount, 'diff': self.poscount - self.negcount})
+            payload = {'frame_count': count}
+            for lbl in self.wanted_labels:
+                payload.update(dict([('poscount_'+lbl, self.poscount[lbl]), ('negcount_'+lbl, self.negcount[lbl]), ('diff_'+lbl, self.poscount[lbl] - self.negcount[lbl])]))
+
             async with aiofiles.open(self.log, mode='a+') as f:
-                await f.write(payload + '\n')
+                await f.write(json.dumps(payload) + '\n')
 
     async def periodic_mqtt_heartbeat(self):
         if self.mqtt is not None:
             while True:
-                payload = json.dumps({'acp_ts': str(time()), 'acp_id': self.mqtt_acp_id, 'poscount': self.poscount, 'negcount': self.negcount, 'diff': self.poscount - self.negcount})
-                self.mqtt.publish(self.topic, payload)
+                payload = {'acp_ts': str(time()), 'acp_id': self.mqtt_acp_id}
+                for lbl in self.wanted_labels:
+                    payload.update(dict([('poscount_'+lbl, self.poscount[lbl]), ('negcount_'+lbl, self.negcount[lbl]), ('diff_'+lbl, self.poscount[lbl] - self.negcount[lbl])]))
+                self.mqtt.publish(self.topic, json.dumps(payload))
                 await asyncio.sleep(self.heartbeat_delay_secs)
 
     async def graphical_output(self, render : RenderInfo, elements, output_wh : (int, int)):
@@ -669,11 +684,13 @@ class Pipeline:
         finally:
             self.output.release()
 
-    def check_deleted_track(self, i):
+    def check_deleted_track(self, track):
+        i = track.track_id
         if i in self.db and len(self.db[i]) > 1:
             if any_intersection(self.cameracountline[0], self.cameracountline[1], np.array(self.db[i])):
-                self.delcount+=1
-                print("delcount={}".format(self.delcount))
+                l = track.get_label()
+                self.delcount[l]+=1
+                print("delcount[{}]={}".format(l,self.delcount[l]))
             self.db[i] = []
 
     async def start(self):
