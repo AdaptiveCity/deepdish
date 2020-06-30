@@ -1,5 +1,5 @@
 # vim: expandtab:ts=4:sw=4
-
+from collections import Counter
 
 class TrackState:
     """
@@ -64,7 +64,7 @@ class Track:
     """
 
     def __init__(self, mean, covariance, track_id, n_init, max_age,
-                 feature=None):
+                 feature=None, label=None):
         self.mean = mean
         self.covariance = covariance
         self.track_id = track_id
@@ -76,7 +76,10 @@ class Track:
         self.features = []
         if feature is not None:
             self.features.append(feature)
-
+        if label is not None:
+            self.labels = [label]
+        else:
+            self.labels = []
         self._n_init = n_init
         self._max_age = max_age
 
@@ -143,6 +146,13 @@ class Track:
         self.time_since_update = 0
         if self.state == TrackState.Tentative and self.hits >= self._n_init:
             self.state = TrackState.Confirmed
+        self.labels.append(detection.label)
+
+    def get_label(self):
+        if not self.labels:
+            return None
+        else:
+            return Counter(self.labels).most_common(1)[0][0]
 
     def mark_missed(self):
         """Mark this track as missed (no association at the current time step).

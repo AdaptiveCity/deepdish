@@ -163,25 +163,29 @@ def test():
   ssdm.draw_boxes_and_save(boxes, labels, scores, img, 'output.jpg')
 
 class SSD_MOBILENET():
-  def __init__(self, wanted_label=None, model_file=None, label_file=None, num_threads=None, edgetpu=False, libedgetpu=None):
+  def __init__(self, wanted_labels=None, model_file=None, label_file=None, num_threads=None, edgetpu=False, libedgetpu=None):
     if model_file is None:
-        model_file = 'ssd_mobilenet.tflite'
+      model_file = 'ssd_mobilenet.tflite'
     if label_file is None:
-        label_file = 'coco_labelmap.txt'
+      label_file = 'coco_labelmap.txt'
     self.ssdm = SSDMobileNet(model_file, label_file, num_threads=num_threads, edgetpu=edgetpu, libedgetpu=libedgetpu)
-    self.wanted_label = wanted_label
+    if wanted_labels is None:
+      wanted_labels = ['person']
+    self.wanted_labels = wanted_labels
   def detect_image(self, img):
     #t0 = time.time()
     inp = self.ssdm.prepare_image(img)
     boxes, labels, scores = self.ssdm.predict(inp,original_image_size=img.size)
     #t1 = time.time()
     #print("detect_time={}".format(t1 - t0))
-    res = []
+    return_boxs = []
+    return_lbls = []
     for i in range(len(boxes)):
-      if self.wanted_label is None or labels[i] == self.wanted_label:
+      if labels[i] in self.wanted_labels:
         box = boxes[i]
-        res.append([box[0], box[1], box[2] - box[0], box[3] - box[1]])
-    return res
+        return_boxs.append([box[0], box[1], box[2] - box[0], box[3] - box[1]])
+        return_lbls.append(labels[i])
+    return (return_boxs, return_lbls)
 
 if __name__ == "__main__":
   test()

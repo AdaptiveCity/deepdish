@@ -19,7 +19,7 @@ from yolo3.model import yolo_eval
 from yolo3.utils import letterbox_image
 
 class YOLO(object):
-    def __init__(self,wanted_label=None,model_file=None,label_file=None,num_threads=None):
+    def __init__(self,wanted_labels=None,model_file=None,label_file=None,num_threads=None):
         basedir = os.getenv('DEEPDISHHOME','.')
         self.model_path = '{}/detectors/yolo/yolo.h5'.format(basedir)
         self.anchors_path = '{}/detectors/yolo/yolo_anchors.txt'.format(basedir)
@@ -32,9 +32,9 @@ class YOLO(object):
         self.model_image_size = (416, 416) # fixed size or (None, None)
         self.is_fixed_size = self.model_image_size != (None, None)
         self.boxes, self.scores, self.classes = self.generate()
-        if wanted_label is None:
-            wanted_label = 'person'
-        self.wanted_label = wanted_label
+        if wanted_labels is None:
+            wanted_labels = ['person']
+        self.wanted_labels = wanted_labels
 
     def _get_class(self):
         classes_path = os.path.expanduser(self.classes_path)
@@ -98,9 +98,10 @@ class YOLO(object):
                 self.input_image_shape: [image.size[1], image.size[0]]
             })
         return_boxs = []
+        return_lbls = []
         for i, c in reversed(list(enumerate(out_classes))):
             predicted_class = self.class_names[c]
-            if predicted_class != self.wanted_label:
+            if predicted_class not in self.wanted_labels:
                 continue
             box = out_boxes[i]
            # score = out_scores[i]  
@@ -115,8 +116,9 @@ class YOLO(object):
                 h = h + y
                 y = 0 
             return_boxs.append([x,y,w,h])
+            return_lbls.append(predicted_class)
 
-        return return_boxs
+        return (return_boxs, return_lbls)
 
     def close_session(self):
         self.sess.close()

@@ -260,13 +260,16 @@ class Pipeline:
         # Initialise output
         self.init_output(self.args.output)
 
+        # Process comma-separated list of wanted labels
+        self.wanted_labels = self.args.wanted_labels.strip().split(',')
+
         # Initialise object detector (for some reason it has to happen
         # here & not within detect_objects(), or else the inference engine
         # gets upset and starts throwing NaNs at me. Thanks, Python.)
         if 'yolo' in self.args.model:
-            self.object_detector = YOLO(wanted_label=self.args.wanted_label, model_file=self.args.model, label_file=self.args.labels, num_threads=self.args.num_threads)
+            self.object_detector = YOLO(wanted_labels=self.wanted_labels, model_file=self.args.model, label_file=self.args.labels, num_threads=self.args.num_threads)
         else:
-            self.object_detector = SSD_MOBILENET(wanted_label=self.args.wanted_label, model_file=self.args.model, label_file=self.args.labels,
+            self.object_detector = SSD_MOBILENET(wanted_labels=self.wanted_labels, model_file=self.args.model, label_file=self.args.labels,
                     num_threads=self.args.num_threads, edgetpu=self.args.edgetpu)
 
         # Initialise feature encoder
@@ -400,9 +403,9 @@ class Pipeline:
 
     def run_object_detector(self, image):
         t1 = time()
-        boxes = self.object_detector.detect_image(image)
+        (boxes, labels) = self.object_detector.detect_image(image)
         t2 = time()
-        return (boxes, t2 - t1)
+        return (boxes, labels, t2 - t1)
 
     async def detect_objects(self, q_in, q_out):
         # Initialise background subtractor
@@ -427,14 +430,14 @@ class Pipeline:
                 t_backsub = time()
 
                 # Run object detection engine within a Thread Pool
-                (boxes0, delta_t) = await self.loop.run_in_executor(pool, self.run_object_detector, image)
+                (boxes0, labels0, delta_t) = await self.loop.run_in_executor(pool, self.run_object_detector, image)
 
                 # Filter object detection boxes, including only those with areas of motion
                 t1 = time()
                 boxes = []
-
+                labels = []
                 max_x, max_y = self.args.camera_width, self.args.camera_height
-                for (x,y,w,h) in boxes0:
+                for ((x,y,w,h), lbl) in zip(boxes0, labels0):
                     if np.any(np.isnan(boxes0)):
                         # Drop any rubbish results
                         continue
@@ -449,6 +452,7 @@ class Pipeline:
                     rat = self.args.background_subtraction_ratio
                     if not self.background_subtraction or nonzeroes >= rat * w * h:
                         boxes.append((x,y,w,h))
+                        labels.append(lbl)
                 t2 = time()
 
                 # Send results to next step in pipeline
@@ -459,13 +463,13 @@ class Pipeline:
                             TimingInfo('Frame / Q1 item received latency', 'q1', t_frame_recv - t_prev),
                             TimingInfo('Background subtraction latency', 'bsub', t_backsub - t_frame_recv),
                             TimingInfo('Object detection latency', 'objd', delta_t+(t2-t1))]
-                await q_out.put((frame, boxes, elements, time()))
+                await q_out.put((frame, boxes, labels, elements, time()))
 
     async def encode_features(self, q_in, q_out):
         with concurrent.futures.ThreadPoolExecutor() as pool:
             while self.running:
                 # Obtain next video frame and object detection boxes
-                (frame, boxes, elements, t_prev) = await q_in.get()
+                (frame, boxes, labels, elements, t_prev) = await q_in.get()
 
                 t1 = time()
                 # Run feature encoder within a Thread Pool
@@ -473,7 +477,7 @@ class Pipeline:
                 t2 = time()
 
                 # Build list of 'Detection' objects and send them to next step in pipeline
-                detections = [Detection(bbox, 1.0, feature) for bbox, feature in zip(boxes, features)]
+                detections = [Detection(bbox, lbl, 1.0, feature) for bbox, lbl, feature in zip(boxes, labels, features)]
                 elements.append(TimingInfo('Q1 / Q2 latency', 'q2', (t1 - t_prev)))
                 elements.append(TimingInfo('Feature encoder latency', 'feat', (t2-t1)))
                 await q_out.put((detections, elements, time()))
@@ -505,6 +509,7 @@ class Pipeline:
 
             for track in self.tracker.tracks:
                 i = track.track_id
+                lbl = track.get_label()
                 if not track.is_confirmed() or track.time_since_update > 1:
                     continue
                 if i not in self.db:
@@ -528,7 +533,7 @@ class Pipeline:
                     cp = np.cross(q1 - p1,q2 - p2)
                     if intersection(p1,q1,p2,q2):
                         self.intcount+=1
-                        print("track_id={} just intersected camera countline; cross-prod={}; intcount={}".format(i,cp,self.intcount))
+                        print("track_id={} ({}) just intersected camera countline; cross-prod={}; intcount={}".format(i,lbl,cp,self.intcount))
                         elements.append(TrackedPathIntersection(pts[-4:]))
                         if cp >= 0:
                             self.poscount+=1
@@ -541,6 +546,8 @@ class Pipeline:
 
                 if self.args.object_annotation.lower() == 'id':
                     annot = str(track.track_id)
+                elif self.args.object_annotation.lower() == 'label':
+                    annot = lbl
                 else:
                     annot = ''
                 elements.append(TrackedObject(bbox, annot))
@@ -724,8 +731,8 @@ def get_arguments():
                         metavar='N', default=0.7, type=float)
     parser.add_argument('--max-age', help='Max age of lost track', metavar='N',
                         default=10, type=int)
-    parser.add_argument('--wanted-label', help='Label of object to count',
-                        metavar='LABEL', default='person')
+    parser.add_argument('--wanted-labels', help='Comma-separated list of labels of objects to count',
+                        metavar='LABEL1,LABEL2,...', default='person')
     parser.add_argument('--num-threads', '-N', help='Number of threads for tensorflow lite',
                         metavar='N', default=4, type=int)
     parser.add_argument('--deepsorthome', help='Location of model_data directory',
@@ -764,8 +771,8 @@ def get_arguments():
                         default=False, action='store_true')
     parser.add_argument('--log', help='Log state of parameters in given file as JSON',
                         default=None, metavar='FILE')
-    parser.add_argument('--object-annotation', help='The category of information to show with each detected object (options: ID, NONE).',
-                        default='ID', metavar='CATEGORY', choices=['ID','id','NONE','none'])
+    parser.add_argument('--object-annotation', help='The category of information to show with each detected object (options: ID, LABEL, NONE).',
+                        default='LABEL', metavar='CATEGORY', choices=['ID','id','LABEL','label','NONE','none'])
     args = parser.parse_args()
 
     if args.deepsorthome is None:
