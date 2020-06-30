@@ -173,7 +173,7 @@ class TrackedObject:
         self.priority = 6
         self.outline = (255, 255, 255)
         self.font_fill = (0, 255, 0)
-        self.font = 'small'
+        self.font = 'tiny'
     def do_render(self, render):
         pts = list(np.int32(np.array(self.bbox).reshape(-1,2) * render.ratio).reshape(-1))
         render.draw.rectangle(pts, outline=self.outline)
@@ -539,7 +539,11 @@ class Pipeline:
                         await self.publish_crossing_event_to_mqtt(elements, crossing_type)
                         await self.publish_crossing_event_to_log(elements)
 
-                elements.append(TrackedObject(bbox, str(track.track_id)))
+                if self.args.object_annotation.lower() == 'id':
+                    annot = str(track.track_id)
+                else:
+                    annot = ''
+                elements.append(TrackedObject(bbox, annot))
 
             for det in detections:
                 bbox = det.to_tlbr()
@@ -760,6 +764,8 @@ def get_arguments():
                         default=False, action='store_true')
     parser.add_argument('--log', help='Log state of parameters in given file as JSON',
                         default=None, metavar='FILE')
+    parser.add_argument('--object-annotation', help='The category of information to show with each detected object (options: ID, NONE).',
+                        default='ID', metavar='CATEGORY', choices=['ID','id','NONE','none'])
     args = parser.parse_args()
 
     if args.deepsorthome is None:
