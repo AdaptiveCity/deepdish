@@ -19,12 +19,12 @@ from yolo3.model import yolo_eval
 from yolo3.utils import letterbox_image
 
 class YOLO(object):
-    def __init__(self,wanted_labels=None,model_file=None,label_file=None,num_threads=None):
+    def __init__(self,wanted_labels=None,model_file=None,label_file=None,num_threads=None,score_threshold=0.5):
         basedir = os.getenv('DEEPDISHHOME','.')
         self.model_path = '{}/detectors/yolo/yolo.h5'.format(basedir)
         self.anchors_path = '{}/detectors/yolo/yolo_anchors.txt'.format(basedir)
         self.classes_path = '{}/detectors/yolo/coco_classes.txt'.format(basedir)
-        self.score = 0.5
+        self.score_threshold = score_threshold
         self.iou = 0.5
         self.class_names = self._get_class()
         self.anchors = self._get_anchors()
@@ -73,7 +73,7 @@ class YOLO(object):
         self.input_image_shape = K.placeholder(shape=(2, ))
         boxes, scores, classes = yolo_eval(self.yolo_model.output, self.anchors,
                 len(self.class_names), self.input_image_shape,
-                score_threshold=self.score, iou_threshold=self.iou)
+                score_threshold=self.score_threshold, iou_threshold=self.iou)
         return boxes, scores, classes
 
     def detect_image(self, image):
@@ -104,7 +104,9 @@ class YOLO(object):
             if predicted_class not in self.wanted_labels:
                 continue
             box = out_boxes[i]
-           # score = out_scores[i]  
+            score = out_scores[i]
+            if score < self.score_threshold:
+                continue
             x = int(box[1])  
             y = int(box[0])  
             w = int(box[3]-box[1])
