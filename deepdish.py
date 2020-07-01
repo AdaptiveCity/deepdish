@@ -454,10 +454,8 @@ class Pipeline:
                     if w * h > 0.9 * max_x * max_y:
                         # reject as spurious
                         continue
-                    # Check if the box includes any detected motion
-                    nonzeroes = np.count_nonzero(fgMask[y:y+h,x:x+w])
-                    rat = self.args.background_subtraction_ratio
-                    if not self.background_subtraction or nonzeroes >= rat * w * h:
+                    # Check if the box includes sufficient detected motion
+                    if not self.background_subtraction or np.count_nonzero(fgMask[y:y+h,x:x+w]) >= self.args.background_subtraction_ratio * w * h:
                         boxes.append((x,y,w,h))
                         labels.append(lbl)
                 t2 = time()
