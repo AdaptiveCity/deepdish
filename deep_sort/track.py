@@ -1,5 +1,6 @@
 # vim: expandtab:ts=4:sw=4
 from collections import Counter
+import numpy as np
 
 class TrackState:
     """
@@ -63,8 +64,7 @@ class Track:
 
     """
 
-    def __init__(self, mean, covariance, track_id, n_init, max_age,
-                 feature=None, label=None):
+    def __init__(self, mean, covariance, track_id, n_init, max_age, detection):
         self.mean = mean
         self.covariance = covariance
         self.track_id = track_id
@@ -73,13 +73,10 @@ class Track:
         self.time_since_update = 0
 
         self.state = TrackState.Tentative
-        self.features = []
-        if feature is not None:
-            self.features.append(feature)
-        if label is not None:
-            self.labels = [label]
-        else:
-            self.labels = []
+        self.features = [detection.feature]
+        self.labels = [detection.label]
+        self.dist = {}
+        self.dist[detection.label] = [detection.confidence]
         self._n_init = n_init
         self._max_age = max_age
 
@@ -146,13 +143,43 @@ class Track:
         self.time_since_update = 0
         if self.state == TrackState.Tentative and self.hits >= self._n_init:
             self.state = TrackState.Confirmed
+        # add a vote for this particular label
         self.labels.append(detection.label)
+        if detection.label not in self.dist:
+            self.dist[detection.label] = []
+        self.dist[detection.label].append(detection.confidence)
 
     def get_label(self):
+        # the label of a track is designated as the most commonly
+        # identified object associated with the track (with one
+        # exception)
         if not self.labels:
             return None
         else:
-            return Counter(self.labels).most_common(1)[0][0]
+            # Workaround for poor object recognition of motorbikes vs bicycles.
+            #
+
+            dists=[(lbl, len(scrs), np.average(scrs)) for (lbl, scrs) in self.dist.items()]
+            alphas=np.array([avg for (_, _, avg) in dists])
+            c=np.array([cnt for (_, cnt, _) in dists])
+            lbls=[lbl for (lbl, _, _) in dists]
+
+            # Expected value of a Multinomial with Dirichlet priors.
+            # towardsdatascience.com/estimating-probabilities-with-bayesian-modeling-in-python-7144be007815
+            expected=list(reversed(sorted(zip((alphas+c)/(c.sum() + alphas.sum()), lbls))))
+
+            # how much to lean in favour of assuming a 'motorbike' is actually a 'bicycle'
+            factor=4 # FIXME (experimental): needs testing
+
+            if len(expected) > 1:
+                if expected[0][1] == 'motorbike' and expected[1][1] == 'bicycle':
+                    # if probability of motorbike greatly exceeds that of bicycle
+                    if expected[0][0] > expected[1][0] * factor:
+                        return 'motorbike'
+                    else:
+                        return 'bicycle'
+            # otherwise, use most likely
+            return expected[0][1]
 
     def mark_missed(self):
         """Mark this track as missed (no association at the current time step).
