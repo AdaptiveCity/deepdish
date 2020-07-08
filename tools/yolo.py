@@ -87,7 +87,6 @@ class YOLO(object):
             boxed_image = letterbox_image(image, new_image_size)
         image_data = np.array(boxed_image, dtype='float32')
 
-        #print(image_data.shape)
         image_data /= 255.
         image_data = np.expand_dims(image_data, 0)  # Add batch dimension.
 
@@ -99,6 +98,7 @@ class YOLO(object):
             })
         return_boxs = []
         return_lbls = []
+        return_scrs = []
         for i, c in reversed(list(enumerate(out_classes))):
             predicted_class = self.class_names[c]
             if predicted_class not in self.wanted_labels:
@@ -107,8 +107,8 @@ class YOLO(object):
             score = out_scores[i]
             if score < self.score_threshold:
                 continue
-            x = int(box[1])  
-            y = int(box[0])  
+            x = int(box[1])
+            y = int(box[0])
             w = int(box[3]-box[1])
             h = int(box[2]-box[0])
             if x < 0 :
@@ -116,11 +116,12 @@ class YOLO(object):
                 x = 0
             if y < 0 :
                 h = h + y
-                y = 0 
+                y = 0
             return_boxs.append([x,y,w,h])
             return_lbls.append(predicted_class)
+            return_scrs.append(score)
 
-        return (return_boxs, return_lbls)
+        return (return_boxs, return_lbls, return_scrs)
 
     def close_session(self):
         self.sess.close()

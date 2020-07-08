@@ -181,12 +181,14 @@ class SSD_MOBILENET():
     #print("detect_time={}".format(t1 - t0))
     return_boxs = []
     return_lbls = []
+    return_scrs = []
     for i in range(len(boxes)):
       if labels[i] in self.wanted_labels and scores[i] >= self.score_threshold:
         box = boxes[i]
         return_boxs.append([box[0], box[1], box[2] - box[0], box[3] - box[1]])
         return_lbls.append(labels[i])
-    return (return_boxs, return_lbls)
+        return_scrs.append(scores[i])
+    return (return_boxs, return_lbls, return_scrs)
 
 if __name__ == "__main__":
   test()

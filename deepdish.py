@@ -410,9 +410,9 @@ class Pipeline:
 
     def run_object_detector(self, image):
         t1 = time()
-        (boxes, labels) = self.object_detector.detect_image(image)
+        (boxes, labels, scores) = self.object_detector.detect_image(image)
         t2 = time()
-        return (boxes, labels, t2 - t1)
+        return (boxes, labels, scores, t2 - t1)
 
     async def detect_objects(self, q_in, q_out):
         # Initialise background subtractor
@@ -437,14 +437,15 @@ class Pipeline:
                 t_backsub = time()
 
                 # Run object detection engine within a Thread Pool
-                (boxes0, labels0, delta_t) = await self.loop.run_in_executor(pool, self.run_object_detector, image)
+                (boxes0, labels0, scores0, delta_t) = await self.loop.run_in_executor(pool, self.run_object_detector, image)
 
                 # Filter object detection boxes, including only those with areas of motion
                 t1 = time()
                 boxes = []
                 labels = []
+                scores = []
                 max_x, max_y = self.args.camera_width, self.args.camera_height
-                for ((x,y,w,h), lbl) in zip(boxes0, labels0):
+                for ((x,y,w,h), lbl, scr) in zip(boxes0, labels0, scores0):
                     if np.any(np.isnan(boxes0)):
                         # Drop any rubbish results
                         continue
@@ -458,6 +459,7 @@ class Pipeline:
                     if not self.background_subtraction or np.count_nonzero(fgMask[y:y+h,x:x+w]) >= self.args.background_subtraction_ratio * w * h:
                         boxes.append((x,y,w,h))
                         labels.append(lbl)
+                        scores.append(scr)
                 t2 = time()
 
                 # Send results to next step in pipeline
@@ -468,13 +470,13 @@ class Pipeline:
                             TimingInfo('Frame / Q1 item received latency', 'q1', t_frame_recv - t_prev),
                             TimingInfo('Background subtraction latency', 'bsub', t_backsub - t_frame_recv),
                             TimingInfo('Object detection latency', 'objd', delta_t+(t2-t1))]
-                await q_out.put((frame, boxes, labels, elements, time()))
+                await q_out.put((frame, boxes, labels, scores, elements, time()))
 
     async def encode_features(self, q_in, q_out):
         with concurrent.futures.ThreadPoolExecutor() as pool:
             while self.running:
                 # Obtain next video frame and object detection boxes
-                (frame, boxes, labels, elements, t_prev) = await q_in.get()
+                (frame, boxes, labels, scores, elements, t_prev) = await q_in.get()
 
                 t1 = time()
                 # Run feature encoder within a Thread Pool
@@ -482,7 +484,7 @@ class Pipeline:
                 t2 = time()
 
                 # Build list of 'Detection' objects and send them to next step in pipeline
-                detections = [Detection(bbox, lbl, 1.0, feature) for bbox, lbl, feature in zip(boxes, labels, features)]
+                detections = [Detection(bbox, lbl, scr, feature) for bbox, lbl, scr, feature in zip(boxes, labels, scores, features)]
                 elements.append(TimingInfo('Q1 / Q2 latency', 'q2', (t1 - t_prev)))
                 elements.append(TimingInfo('Feature encoder latency', 'feat', (t2-t1)))
                 await q_out.put((detections, elements, time()))
