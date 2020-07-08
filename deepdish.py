@@ -479,12 +479,20 @@ class Pipeline:
                 (frame, boxes, labels, scores, elements, t_prev) = await q_in.get()
 
                 t1 = time()
+                # Run non-max suppression to eliminate spurious boxes
+                boxesA0 = np.array(boxes)
+                scoresA0 = np.array(scores)
+                indices = preprocessing.non_max_suppression(boxesA0, self.args.nms_max_overlap, scoresA0)
+                boxesA1 = boxesA0[indices]
+                scoresA1 = scoresA0[indices]
+                labels1 = [labels[i] for i in indices]
+
                 # Run feature encoder within a Thread Pool
-                features = await self.loop.run_in_executor(pool, self.encoder, frame, boxes)
+                features = await self.loop.run_in_executor(pool, self.encoder, frame, boxesA1)
                 t2 = time()
 
                 # Build list of 'Detection' objects and send them to next step in pipeline
-                detections = [Detection(bbox, lbl, scr, feature) for bbox, lbl, scr, feature in zip(boxes, labels, scores, features)]
+                detections = [Detection(bbox, lbl, scr, feature) for bbox, lbl, scr, feature in zip(boxesA1, labels1, scoresA1, features)]
                 elements.append(TimingInfo('Q1 / Q2 latency', 'q2', (t1 - t_prev)))
                 elements.append(TimingInfo('Feature encoder latency', 'feat', (t2-t1)))
                 await q_out.put((detections, elements, time()))
@@ -493,10 +501,6 @@ class Pipeline:
         while self.running:
             (detections, elements, t_prev) = await q_in.get()
             t1 = time()
-            boxes = np.array([d.tlwh for d in detections])
-            scores = np.array([d.confidence for d in detections])
-            indices = preprocessing.non_max_suppression(boxes, self.args.nms_max_overlap, scores)
-            detections = [detections[i] for i in indices]
             self.tracker.predict()
             self.tracker.update(detections)
             t2 = time()
