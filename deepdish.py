@@ -741,13 +741,13 @@ def get_arguments():
     parser.add_argument('--color-mode', help='Color mode for framebuffer, default: RGBA (see OpenCV docs)',
                         default=None, metavar='MODE')
     parser.add_argument('--max-cosine-distance', help='Max cosine distance', metavar='N',
-                        default=0.6, type=float)
+                        default=0.2, type=float)
     parser.add_argument('--nms-max-overlap', help='Non-Max-Suppression max overlap', metavar='N',
-                        default=1.0, type=float)
+                        default=0.6, type=float)
     parser.add_argument('--max-iou-distance', help='Max Intersection-Over-Union distance',
                         metavar='N', default=0.7, type=float)
-    parser.add_argument('--max-age', help='Max age of lost track', metavar='N',
-                        default=10, type=int)
+    parser.add_argument('--max-age', help='Max age of lost track (in number of frames)', metavar='N',
+                        default=60, type=int)
     parser.add_argument('--wanted-labels', help='Comma-separated list of labels of objects to count',
                         metavar='LABEL1,LABEL2,...', default='person')
     parser.add_argument('--num-threads', '-N', help='Number of threads for tensorflow lite',
