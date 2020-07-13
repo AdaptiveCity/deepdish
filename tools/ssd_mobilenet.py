@@ -9,7 +9,7 @@ import tflite_runtime.interpreter as tflite
 import tensorflow as tf
 
 class SSDMobileNet:
-  def __init__(self,model_path,label_path,num_threads=None,edgetpu=False,libedgetpu=None):
+  def __init__(self,model_path,label_path,num_threads=None,edgetpu=False,libedgetpu=None,score_threshold=0.5):
     if edgetpu:
       if libedgetpu is None:
         libedgetpu = 'libedgetpu.so.1'
