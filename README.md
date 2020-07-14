@@ -34,8 +34,11 @@ Be sure to download the H5 file to the correct location.
 
 ## Simple examples
 
+Use the SSD MobileNet backend with v1.
 - `./run.sh python3 deepdish.py --model detectors/mobilenet/ssdmobilenetv1.tflite --labels detectors/mobilenet/labels.txt --encoder-model encoders/mars-64x32x3.pb --input input_file.mp4 --output output_file.mp4`
 
+Use the Yolo backend.
 - `./run.sh python3 deepdish.py --model detectors/yolo --labels detectors/yolo --encoder-model encoders/mars-64x32x3.pb --input input_file.mp4 --output output_file.mp4`
 
-- `./run.sh python3 deepdish.py --edgetpu --model=detectors/mobilenet/ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite --labels=detectors/mobilenet/labels.txt --encoder-model=encoders/mars-64x32x3.pb`
+Use the EdgeTPU backend with one of the SSD MobileNet v2 models and track objects identified as cars, buses, trucks or bicycles:
+- `./run.sh python3 deepdish.py --edgetpu --model=detectors/mobilenet/ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite --labels=detectors/mobilenet/labels.txt --encoder-model=encoders/mars-64x32x3.pb --wanted-labels car,bus,truck,bicycle`
