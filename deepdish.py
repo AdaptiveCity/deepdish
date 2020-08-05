@@ -328,7 +328,15 @@ class Pipeline:
     def init_camera(self):
         self.input = self.args.input
         if self.input is None:
-            self.input = self.args.camera
+            if self.args.gstreamer is not None:
+                src = self.args.gstreamer
+            elif self.args.gstreamer_nvidia:
+                w, h = self.args.camera_width, self.args.camera_height
+                src = "nvarguscamerasrc ! video/x-raw(memory:NVMM), width=(int){}, height=(int){}, format=(string)NV12, framerate=(fraction)30/1 ! nvvidconv flip-method=0 ! video/x-raw, format=(string)BGRx ! videoconvert ! video/x-raw, format=(string)BGR ! appsink".format(w,h)
+            else:
+                src = self.args.camera
+
+            self.input = src
             # Allow live camera frames to be dropped
             self.everyframe = None
         else:
@@ -723,6 +731,10 @@ def get_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument('--camera', help="camera number for live input (OpenCV numbering)",
                         metavar='N', default=0, type=int)
+    parser.add_argument('--gstreamer', help='gstreamer pipeline for camera input (instead of camera number)',
+                        metavar='PIPELINE', default=None)
+    parser.add_argument('--gstreamer-nvidia', help='use nvidia-default gstreamer pipeline (instead of camera number)',
+                        action='store_true', default=False)
     parser.add_argument('--input', help="input MP4 file for video file input (instead of camera)",
                         default=None)
     parser.add_argument('--output', help="output file with annotated video frames",
