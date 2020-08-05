@@ -360,10 +360,10 @@ class Pipeline:
         self.backbuf = Image.new("RGBA", (w, h), (0,0,0,0))
         self.draw = ImageDraw.Draw(self.backbuf)
         self.output = cv2.VideoWriter(self.args.output,fourcc, fps, (w, h))
-        if self.args.no_framebuffer:
+        if not self.args.framebuffer:
             self.framebufdev = None
         else:
-            self.framebufdev = self.args.framebuffer
+            self.framebufdev = self.args.framebuffer_device
             fbX = self.framebufdev[-3:]
 
             vsizefile = '/sys/class/graphics/{}/virtual_size'.format(fbX)
@@ -750,9 +750,9 @@ def get_arguments():
     parser.add_argument('--encoder-batch-size', help='Batch size for feature encoder inference',
                         default=32, type=int, metavar='N')
     parser.add_argument('--labels', help='File path of labels file.', required=True)
-    parser.add_argument('--no-framebuffer', help='Disable framebuffer display',
+    parser.add_argument('--framebuffer', help='Disable framebuffer display',
                         required=False, action='store_true')
-    parser.add_argument('--framebuffer', '-F', help='Framebuffer device',
+    parser.add_argument('--framebuffer-device', '-F', help='Framebuffer device',
                         default='/dev/fb0', metavar='DEVICE')
     parser.add_argument('--framebuffer-width', help='Framebuffer device resolution (width) override',
                         default=None, metavar='WIDTH')
