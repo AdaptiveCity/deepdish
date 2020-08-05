@@ -13,10 +13,16 @@ class EDGETPU():
       wanted_labels = ['person']
     self.wanted_labels = wanted_labels
     self.score_threshold = score_threshold
+    # newer versions of edgetpu library have a new interface
+    detect_op = getattr(self.engine, 'detect_with_image', None)
+    if callable(detect_op):
+      self.detector = detect_op
+    else:
+      self.detector = self.engine.DetectWithImage
 
   def detect_image(self, img):
     img = img.convert('RGB')
-    ans = self.engine.DetectWithImage(
+    ans = self.detector(
         img,
         threshold=self.score_threshold,
         keep_aspect_ratio=False,
