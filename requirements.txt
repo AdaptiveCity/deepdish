@@ -1,0 +1,10 @@
+keras==2.3.1
+sklearn
+numpy
+quart
+tflite-runtime
+tensorflow<2.0
+simplejson
+gmqtt
+opencv-python
+uvloop
