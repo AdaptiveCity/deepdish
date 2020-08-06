@@ -332,7 +332,7 @@ class Pipeline:
                 src = self.args.gstreamer
             elif self.args.gstreamer_nvidia:
                 w, h = self.args.camera_width, self.args.camera_height
-                src = "nvarguscamerasrc ! video/x-raw(memory:NVMM), width=(int){}, height=(int){}, format=(string)NV12, framerate=(fraction)30/1 ! nvvidconv flip-method=0 ! video/x-raw, format=(string)BGRx ! videoconvert ! video/x-raw, format=(string)BGR ! appsink".format(w,h)
+                src = "nvarguscamerasrc ! video/x-raw(memory:NVMM), width=(int){}, height=(int){}, format=(string)NV12, framerate=(fraction)30/1 ! nvvidconv flip-method=0 ! video/x-raw, format=(string)BGRx ! videoconvert ! video/x-raw, format=(string)BGR ! appsink drop=true".format(w,h)
             else:
                 src = self.args.camera
 
@@ -343,6 +343,7 @@ class Pipeline:
             # Capture every frame from the video file
             self.everyframe = asyncio.Event()
         self.cap = cv2.VideoCapture(self.input)
+        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
         # Configure the 'counting line' in the camera viewport
         if self.args.line is None:
