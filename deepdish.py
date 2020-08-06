@@ -32,6 +32,7 @@ from tools import generate_detections as gdet
 from deep_sort.detection import Detection as ddet
 
 import asyncio
+import uvloop
 import aiofiles
 import concurrent.futures
 from gmqtt import Client as MQTTClient
@@ -873,6 +874,7 @@ async def shutdown():
     cmdserver.close()
 
 if __name__ == '__main__':
+    uvloop.install()
     try:
         webapp.run()
     except concurrent.futures.CancelledError:
