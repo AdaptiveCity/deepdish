@@ -460,8 +460,9 @@ class Pipeline:
         finally:
             self.cap.release()
 
-    def run_object_detector(self, image):
+    def run_object_detector(self, frame):
         t1 = time()
+        image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGRA2RGBA))
         (boxes, labels, scores) = self.object_detector.detect_image(image)
         t2 = time()
         return (boxes, labels, scores, t2 - t1)
@@ -489,7 +490,7 @@ class Pipeline:
                 t_backsub = time()
 
                 # Run object detection engine within a Thread Pool
-                (boxes0, labels0, scores0, delta_t) = await self.loop.run_in_executor(pool, self.run_object_detector, image)
+                (boxes0, labels0, scores0, delta_t) = await self.loop.run_in_executor(pool, self.run_object_detector, frame)
 
                 # Filter object detection boxes, including only those with areas of motion
                 t1 = time()
