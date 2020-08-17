@@ -351,6 +351,7 @@ class Pipeline:
             with open(self.log, mode='w+') as f:
                 f.truncate()
         self.loop = asyncio.get_event_loop()
+        self.t_prev = None # frame to frame times
 
     async def init_mqtt(self):
         if self.args.mqtt_broker is not None:
@@ -728,9 +729,13 @@ class Pipeline:
                     if isinstance(e, TimingInfo):
                         t_sum += e.delta_t
                 elements.append(TimingInfo('Latency sum', 'sum', t_sum))
-                t_e2e = time() - t_frame
+                t_now = time()
+                t_e2e = t_now - t_frame
                 elements.append(TimingInfo('End to end latency', 'e2e', t_e2e))
                 elements.append(TimingInfo('Missing', 'miss', t_e2e - t_sum))
+                if self.t_prev is not None:
+                  elements.append(TimingInfo('Frame to frame latency', 'f2f', t_now - self.t_prev))
+                self.t_prev = t_now
 
                 self.text_output(sys.stdout, elements)
 
