@@ -449,7 +449,7 @@ class Pipeline:
                     # Ensure frame is proper size
                     frame = cv2.resize(frame, (self.args.camera_width, self.args.camera_height))
 
-                    await q.put((frame, t_frame, time()))
+                    q.put_nowait((frame, dt_cap, t_frame, time()))
 
                     # If we are ensuring every frame is processed then wait for
                     # synchronising event to be triggered
