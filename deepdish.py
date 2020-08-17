@@ -906,6 +906,7 @@ async def main():
     def shutdown():
         pipeline.running = False
         # When the pipeline finishes, cancel remaining tasks
+        print('Shutting down all tasks')
         for p in asyncio.Task.all_tasks():
             p.cancel()
 
