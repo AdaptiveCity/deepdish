@@ -57,7 +57,7 @@ class MBox:
         self.message = message
         self.lock.release()
 
-def capthread_f(cap, box):
+def capthread_f(cap, box, everyframe):
     try:
         prev_t = time()
         ret = True
@@ -70,6 +70,11 @@ def capthread_f(cap, box):
             #print('{:.02f}ms'.format((t2-prev_t)*1000))
             prev_t = t2
             box.set_message((frame,t2,t2-t1))
+            # If we are ensuring every frame is processed then wait for
+            # synchronising event to be triggered
+            if everyframe is not None:
+                everyframe.wait()
+                everyframe.clear()
     finally:
         cap.release()
 
@@ -378,7 +383,7 @@ class Pipeline:
             self.everyframe = None
         else:
             # Capture every frame from the video file
-            self.everyframe = asyncio.Event()
+            self.everyframe = threading.Event()
         self.cap = cv2.VideoCapture(self.input)
         self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
@@ -452,11 +457,6 @@ class Pipeline:
 
                     q.put_nowait((frame, dt_cap, t_frame, time()))
 
-                    # If we are ensuring every frame is processed then wait for
-                    # synchronising event to be triggered
-                    if self.everyframe is not None:
-                        await self.everyframe.wait()
-                        self.everyframe.clear()
 
         finally:
             self.cap.release()
@@ -773,7 +773,7 @@ class Pipeline:
         asyncio.ensure_future(self.detect_objects(cameraQueue, objectQueue))
 
         box = MBox()
-        capthread = threading.Thread(target=capthread_f, args=(self.cap,box), daemon=True)
+        capthread = threading.Thread(target=capthread_f, args=(self.cap,box,self.everyframe), daemon=True)
         capthread.start()
         await self.capture(cameraQueue, box)
         self.running = False
