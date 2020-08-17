@@ -39,6 +39,39 @@ from gmqtt import Client as MQTTClient
 import json
 
 from quart import Quart, Response, current_app
+import threading
+
+class MBox:
+    def __init__(self):
+        self.message = None
+        self.lock = threading.Lock()
+
+    def get_message(self):
+        self.lock.acquire()
+        message = self.message
+        self.lock.release()
+        return message
+
+    def set_message(self, message):
+        self.lock.acquire()
+        self.message = message
+        self.lock.release()
+
+def capthread_f(cap, box):
+    try:
+        prev_t = time()
+        ret = True
+        while ret:
+            t1 = time()
+            ret, frame = cap.read()
+            if not ret:
+              frame = None
+            t2 = time()
+            #print('{:.02f}ms'.format((t2-prev_t)*1000))
+            prev_t = t2
+            box.set_message((frame,t2,t2-t1))
+    finally:
+        cap.release()
 
 class Error(Exception):
     def __init__(self, msg):
@@ -384,22 +417,25 @@ class Pipeline:
                     h = int(nums[1])
             self.framebufres = (w, h)
 
-    def read_frame(self):
-        ret, frame = self.cap.read()
-        return (frame, time())
-
     def shutdown(self):
         self.running = False
         for p in asyncio.Task.all_tasks():
             p.cancel()
 
-    async def capture(self, q):
+    def read_frame_from_box(self, box):
+        msg = None
+        while msg is None:
+            msg = box.get_message()
+        (frame, t_frame, dt_cap) = msg
+        return (frame, t_frame, dt_cap)
+
+    async def capture(self, q, box):
         try:
             with concurrent.futures.ThreadPoolExecutor() as pool:
                 while self.running:
                     frame = None
                     # Fetch next frame
-                    (frame, t_frame) = await self.loop.run_in_executor(pool, self.read_frame)
+                    (frame, t_frame, dt_cap) = await self.loop.run_in_executor(pool, self.read_frame_from_box, box)
                     if frame is None:
                         print('No more frames.')
                         self.shutdown()
@@ -724,7 +760,11 @@ class Pipeline:
         asyncio.ensure_future(self.track_objects(detectionQueue, resultQueue))
         asyncio.ensure_future(self.encode_features(objectQueue, detectionQueue))
         asyncio.ensure_future(self.detect_objects(cameraQueue, objectQueue))
-        await self.capture(cameraQueue)
+
+        box = MBox()
+        capthread = threading.Thread(target=capthread_f, args=(self.cap,box), daemon=True)
+        capthread.start()
+        await self.capture(cameraQueue, box)
         self.running = False
 
 def get_arguments():
