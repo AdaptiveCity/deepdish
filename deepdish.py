@@ -137,6 +137,8 @@ class FreshQueue(asyncio.Queue):
         item = self._queue[0]
         self._queue = []
         return item
+    def full(self):
+        return False
 
 class FontLib:
     def __init__(self, display_w, fontbasedirs = ['.', '/usr/local/share', '/usr/share']):
