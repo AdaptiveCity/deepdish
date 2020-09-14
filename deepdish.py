@@ -12,6 +12,7 @@ import warnings
 import sys
 import argparse
 import signal
+from collections import deque
 
 import numpy as np
 import cv2
@@ -356,8 +357,20 @@ class Pipeline:
 
         self.log = self.args.log
         if self.log is not None:
-            with open(self.log, mode='w+') as f:
-                f.truncate()
+            if self.args.restore_from_log and os.path.exists(self.log):
+                with open(self.log, mode='r') as f:
+                    q = deque(f, 1)
+                    if len(q) > 0:
+                        last_line = q.pop()
+                        data = json.loads(last_line)
+                        for lbl in self.wanted_labels:
+                            self.poscount[lbl] = data.get('poscount_'+lbl, 0)
+                            self.negcount[lbl] = data.get('negcount_'+lbl, 0)
+                            self.delcount[lbl] = data.get('delcount_'+lbl, 0)
+                            self.intcount[lbl] = data.get('intcount_'+lbl, 0)
+            else:
+                with open(self.log, mode='w+') as f:
+                    f.truncate()
         self.loop = asyncio.get_event_loop()
         self.t_prev = None # frame to frame times
 
@@ -870,6 +883,8 @@ def get_arguments():
                         default=False, action='store_true')
     parser.add_argument('--log', help='Log state of parameters in given file as JSON',
                         default=None, metavar='FILE')
+    parser.add_argument('--restore-from-log', help='Restore parameters from last line of log file, if present',
+                        default=False, action='store_true')
     parser.add_argument('--object-annotation', help='The category of information to show with each detected object (options: ID, LABEL, NONE).',
                         default='LABEL', metavar='CATEGORY', choices=['ID','id','LABEL','label','NONE','none'])
     args = parser.parse_args()
