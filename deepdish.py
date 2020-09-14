@@ -7,7 +7,7 @@ import os
 import re
 import io
 from timeit import time
-from time import time
+from time import time, asctime
 import warnings
 import sys
 import argparse
@@ -612,8 +612,7 @@ class Pipeline:
                         else:
                             self.negcount[lbl]+=1
                             crossing_type = 'neg'
-                        await self.publish_crossing_event_to_mqtt(elements, crossing_type)
-                        await self.publish_crossing_event_to_log(elements)
+                        await self.publish_crossing_event(elements, crossing_type)
 
                 if self.args.object_annotation.lower() == 'id':
                     annot = str(track.track_id)
@@ -634,7 +633,7 @@ class Pipeline:
 
             await q_out.put((elements,time()))
 
-    async def publish_crossing_event_to_mqtt(self, elements, crossing_type):
+    async def publish_crossing_event(self, elements, crossing_type):
         if self.mqtt is not None:
             for e in elements:
                 if isinstance(e, FrameInfo):
@@ -646,7 +645,6 @@ class Pipeline:
 
             self.mqtt.publish(self.topic, json.dumps(payload))
 
-    async def publish_crossing_event_to_log(self, elements):
         if self.log is not None:
             for e in elements:
                 if isinstance(e, FrameInfo):
@@ -659,7 +657,7 @@ class Pipeline:
             async with aiofiles.open(self.log, mode='a+') as f:
                 await f.write(json.dumps(payload) + '\n')
 
-    async def periodic_mqtt_heartbeat(self):
+    async def periodic_heartbeat(self):
         if self.mqtt is not None:
             while True:
                 payload = {'acp_ts': str(time()), 'acp_id': self.mqtt_acp_id}
@@ -667,6 +665,14 @@ class Pipeline:
                     payload.update(dict([('poscount_'+lbl, self.poscount[lbl]), ('negcount_'+lbl, self.negcount[lbl]), ('diff_'+lbl, self.poscount[lbl] - self.negcount[lbl])]))
                 self.mqtt.publish(self.topic, json.dumps(payload))
                 await asyncio.sleep(self.heartbeat_delay_secs)
+
+        if self.log is not None:
+            payload = {'timestamp': str(time()), 'asctime': asctime()}
+            for lbl in self.wanted_labels:
+                payload.update(dict([('poscount_'+lbl, self.poscount[lbl]), ('negcount_'+lbl, self.negcount[lbl]), ('diff_'+lbl, self.poscount[lbl] - self.negcount[lbl])]))
+
+            async with aiofiles.open(self.log, mode='a+') as f:
+                await f.write(json.dumps(payload) + '\n')
 
     async def graphical_output(self, render : RenderInfo, elements, output_wh : (int, int)):
         (output_w, output_h) = output_wh
@@ -919,7 +925,7 @@ async def main():
 
     # Kickstart the main pipeline
     asyncio.ensure_future(pipeline.start())
-    asyncio.ensure_future(pipeline.periodic_mqtt_heartbeat())
+    asyncio.ensure_future(pipeline.periodic_heartbeat())
 
     # await loop.run_until_complete(asyncio.Task.all_tasks()) # doesn't seem to be needed
 
