@@ -40,6 +40,9 @@ import json
 
 from quart import Quart, Response, current_app
 import threading
+import faulthandler
+
+faulthandler.enable()
 
 class MBox:
     def __init__(self):
