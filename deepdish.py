@@ -7,7 +7,7 @@ import os
 import re
 import io
 from timeit import time
-from time import time, asctime
+from time import time, asctime, localtime
 import warnings
 import sys
 import argparse
@@ -349,6 +349,7 @@ class Pipeline:
         self.intcount = dict([(lbl, 0) for lbl in self.wanted_labels])
         self.poscount = dict([(lbl, 0) for lbl in self.wanted_labels])
         self.negcount = dict([(lbl, 0) for lbl in self.wanted_labels])
+        self.frame_count = 0
 
         self.mqtt = None
         self.topic = self.args.mqtt_topic
@@ -368,6 +369,7 @@ class Pipeline:
                             self.negcount[lbl] = data.get('negcount_'+lbl, 0)
                             self.delcount[lbl] = data.get('delcount_'+lbl, 0)
                             self.intcount[lbl] = data.get('intcount_'+lbl, 0)
+                        self.frame_count = data.get('frame_count', 0)
             else:
                 with open(self.log, mode='w+') as f:
                     f.truncate()
@@ -488,10 +490,9 @@ class Pipeline:
         # Initialise background subtractor
         backSub = cv2.createBackgroundSubtractorMOG2()
 
-        frameCount = 0
         with concurrent.futures.ThreadPoolExecutor() as pool:
             while self.running:
-                frameCount += 1
+                self.frame_count += 1
 
                 # Obtain next video frame
                 (frame, dt_cap, t_frame, t_prev) = await q_in.get()
@@ -534,7 +535,7 @@ class Pipeline:
                 t2 = time()
 
                 # Send results to next step in pipeline
-                elements = [FrameInfo(t_frame, frameCount),
+                elements = [FrameInfo(t_frame, self.frame_count),
                             CameraImage(image),
                             CameraCountLine(self.cameracountline),
                             TimingInfo('Frame capture latency', 'fcap', dt_cap),
@@ -646,27 +647,27 @@ class Pipeline:
 
             await q_out.put((elements,time()))
 
-    async def publish_crossing_event(self, elements, crossing_type):
-        if self.mqtt is not None:
-            for e in elements:
-                if isinstance(e, FrameInfo):
-                    t_frame = e.t_frame
-                    break
-            payload = {'acp_ts': str(t_frame), 'acp_id': self.mqtt_acp_id, 'acp_event': 'crossing', 'acp_event_value': crossing_type}
-            for lbl in self.wanted_labels:
-                payload.update(dict([('poscount_'+lbl, self.poscount[lbl]), ('negcount_'+lbl, self.negcount[lbl]), ('diff_'+lbl, self.poscount[lbl] - self.negcount[lbl])]))
+    def update_payload_with_state(self, payload):
+        for lbl in self.wanted_labels:
+            payload.update(dict([
+                ('poscount_'+lbl, self.poscount[lbl]), ('negcount_'+lbl, self.negcount[lbl]), ('diff_'+lbl, self.poscount[lbl] - self.negcount[lbl]),
+                ('intcount_'+lbl, self.intcount[lbl]), ('delcount_'+lbl, self.delcount[lbl]) ]))
 
+    async def publish_crossing_event(self, elements, crossing_type):
+        for e in elements:
+            if isinstance(e, FrameInfo):
+                t_frame = e.t_frame
+                count = e.frame_count
+                break
+
+        if self.mqtt is not None:
+            payload = {'acp_ts': str(t_frame), 'acp_id': self.mqtt_acp_id, 'acp_event': 'crossing', 'acp_event_value': crossing_type}
+            self.update_payload_with_state(payload)
             self.mqtt.publish(self.topic, json.dumps(payload))
 
         if self.log is not None:
-            for e in elements:
-                if isinstance(e, FrameInfo):
-                    count = e.frame_count
-                    break
-            payload = {'frame_count': count}
-            for lbl in self.wanted_labels:
-                payload.update(dict([('poscount_'+lbl, self.poscount[lbl]), ('negcount_'+lbl, self.negcount[lbl]), ('diff_'+lbl, self.poscount[lbl] - self.negcount[lbl])]))
-
+            payload = {'timestamp': str(t_frame), 'asctime': asctime(localtime(t_frame)), 'frame_count': count}
+            self.update_payload_with_state(payload)
             async with aiofiles.open(self.log, mode='a+') as f:
                 await f.write(json.dumps(payload) + '\n')
 
@@ -674,16 +675,13 @@ class Pipeline:
         if self.mqtt is not None:
             while True:
                 payload = {'acp_ts': str(time()), 'acp_id': self.mqtt_acp_id}
-                for lbl in self.wanted_labels:
-                    payload.update(dict([('poscount_'+lbl, self.poscount[lbl]), ('negcount_'+lbl, self.negcount[lbl]), ('diff_'+lbl, self.poscount[lbl] - self.negcount[lbl])]))
+                self.update_payload_with_state(payload)
                 self.mqtt.publish(self.topic, json.dumps(payload))
                 await asyncio.sleep(self.heartbeat_delay_secs)
 
         if self.log is not None:
-            payload = {'timestamp': str(time()), 'asctime': asctime()}
-            for lbl in self.wanted_labels:
-                payload.update(dict([('poscount_'+lbl, self.poscount[lbl]), ('negcount_'+lbl, self.negcount[lbl]), ('diff_'+lbl, self.poscount[lbl] - self.negcount[lbl])]))
-
+            payload = {'timestamp': str(time()), 'asctime': asctime(), 'frame_count': self.frame_count}
+            self.update_payload_with_state(payload)
             async with aiofiles.open(self.log, mode='a+') as f:
                 await f.write(json.dumps(payload) + '\n')
 
