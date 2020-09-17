@@ -192,6 +192,8 @@ class FrameInfo:
         for e in elements:
             if isinstance(e, TimingInfo):
                 handle.write(' {}={:.0f}ms'.format(e.short_label, e.delta_t*1000))
+            elif isinstance(e, TempInfo):
+                handle.write(' temp={:.0f}C'.format(e.temp))
         handle.write('\n')
 
 class TimingInfo:
@@ -200,6 +202,11 @@ class TimingInfo:
         self.short_label = short_label
         self.delta_t = delta_t
         self.priority = 1
+
+class TempInfo:
+    def __init__(self, temp):
+        self.temp = temp
+        self.priority = 2
 
 # A detected object - simply the information conveyed by the object detector
 class DetectedObject:
@@ -376,6 +383,10 @@ class Pipeline:
         self.loop = asyncio.get_event_loop()
         self.t_prev = None # frame to frame times
 
+        self.cpu_temp_file = '/sys/class/thermal/thermal_zone0/temp'
+        if self.args.cpu_temp_file is not None:
+            self.cpu_temp_file = self.args.cpu_temp_file
+
     async def init_mqtt(self):
         if self.args.mqtt_broker is not None:
             self.mqtt = MQTTClient('deepdish')
@@ -447,6 +458,12 @@ class Pipeline:
         self.running = False
         for p in asyncio.Task.all_tasks():
             p.cancel()
+
+    async def get_cpu_temp(self):
+        async with aiofiles.open(self.cpu_temp_file, mode='r') as f:
+            line = await f.read()
+            temp = float(line)
+            return temp/1000
 
     def read_frame_from_box(self, box):
         msg = None
@@ -660,27 +677,29 @@ class Pipeline:
                 count = e.frame_count
                 break
 
+        temp = await self.get_cpu_temp()
         if self.mqtt is not None:
-            payload = {'acp_ts': str(t_frame), 'acp_id': self.mqtt_acp_id, 'acp_event': 'crossing', 'acp_event_value': crossing_type}
+            payload = {'acp_ts': str(t_frame), 'acp_id': self.mqtt_acp_id, 'acp_event': 'crossing', 'acp_event_value': crossing_type, 'temp': temp}
             self.update_payload_with_state(payload)
             self.mqtt.publish(self.topic, json.dumps(payload))
 
         if self.log is not None:
-            payload = {'timestamp': str(t_frame), 'asctime': asctime(localtime(t_frame)), 'frame_count': count}
+            payload = {'timestamp': str(t_frame), 'asctime': asctime(localtime(t_frame)), 'frame_count': count, 'temp': temp}
             self.update_payload_with_state(payload)
             async with aiofiles.open(self.log, mode='a+') as f:
                 await f.write(json.dumps(payload) + '\n')
 
     async def periodic_heartbeat(self):
+        temp = await self.get_cpu_temp()
         if self.mqtt is not None:
             while True:
-                payload = {'acp_ts': str(time()), 'acp_id': self.mqtt_acp_id}
+                payload = {'acp_ts': str(time()), 'acp_id': self.mqtt_acp_id, 'temp': temp}
                 self.update_payload_with_state(payload)
                 self.mqtt.publish(self.topic, json.dumps(payload))
                 await asyncio.sleep(self.heartbeat_delay_secs)
 
         if self.log is not None:
-            payload = {'timestamp': str(time()), 'asctime': asctime(), 'frame_count': self.frame_count}
+            payload = {'timestamp': str(time()), 'asctime': asctime(), 'frame_count': self.frame_count, 'temp': temp}
             self.update_payload_with_state(payload)
             async with aiofiles.open(self.log, mode='a+') as f:
                 await f.write(json.dumps(payload) + '\n')
@@ -759,6 +778,9 @@ class Pipeline:
                 if self.t_prev is not None:
                   elements.append(TimingInfo('Frame to frame latency', 'f2f', t_now - self.t_prev))
                 self.t_prev = t_now
+
+                temp = await self.get_cpu_temp()
+                elements.append(TempInfo(temp))
 
                 self.text_output(sys.stdout, elements)
 
@@ -885,6 +907,8 @@ def get_arguments():
                         default=False, action='store_true')
     parser.add_argument('--object-annotation', help='The category of information to show with each detected object (options: ID, LABEL, NONE).',
                         default='LABEL', metavar='CATEGORY', choices=['ID','id','LABEL','label','NONE','none'])
+    parser.add_argument('--cpu-temp-file', help='Specify system file to read CPU temperature from',
+                        default=None, metavar='FILE')
     args = parser.parse_args()
 
     if args.deepsorthome is None:
