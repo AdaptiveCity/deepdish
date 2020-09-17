@@ -690,19 +690,20 @@ class Pipeline:
                 await f.write(json.dumps(payload) + '\n')
 
     async def periodic_heartbeat(self):
-        temp = await self.get_cpu_temp()
-        if self.mqtt is not None:
-            while True:
+        while True:
+            temp = await self.get_cpu_temp()
+            if self.mqtt is not None:
                 payload = {'acp_ts': str(time()), 'acp_id': self.mqtt_acp_id, 'temp': temp}
                 self.update_payload_with_state(payload)
                 self.mqtt.publish(self.topic, json.dumps(payload))
-                await asyncio.sleep(self.heartbeat_delay_secs)
 
-        if self.log is not None:
-            payload = {'timestamp': str(time()), 'asctime': asctime(), 'frame_count': self.frame_count, 'temp': temp}
-            self.update_payload_with_state(payload)
-            async with aiofiles.open(self.log, mode='a+') as f:
-                await f.write(json.dumps(payload) + '\n')
+            if self.log is not None:
+                payload = {'timestamp': str(time()), 'asctime': asctime(), 'frame_count': self.frame_count, 'temp': temp}
+                self.update_payload_with_state(payload)
+                async with aiofiles.open(self.log, mode='a+') as f:
+                    await f.write(json.dumps(payload) + '\n')
+
+            await asyncio.sleep(self.heartbeat_delay_secs)
 
     async def graphical_output(self, render : RenderInfo, elements, output_wh : (int, int)):
         (output_w, output_h) = output_wh
