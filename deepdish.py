@@ -522,7 +522,7 @@ class Pipeline:
                     if self.args.enable_background_masking:
                         frame = cv2.bitwise_and(frame,frame,mask = fgMask)
                 # Convert to PIL Image
-                image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGRA2RGBA))
+                #image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGRA2RGBA))
                 t_backsub = time()
 
                 # Run object detection engine within a Thread Pool
@@ -553,7 +553,7 @@ class Pipeline:
 
                 # Send results to next step in pipeline
                 elements = [FrameInfo(t_frame, self.frame_count),
-                            CameraImage(image),
+                            CameraImage(Image.fromarray(cv2.cvtColor(frame,cv2.COLOR_BGRA2RGB), mode='RGB')),
                             CameraCountLine(self.cameracountline),
                             TimingInfo('Frame capture latency', 'fcap', dt_cap),
                             TimingInfo('Frame return [Q0] latency', 'fram', t_prev - t_frame),
@@ -724,7 +724,7 @@ class Pipeline:
         if self.color_mode is not None:
             outputbgra = cv2.cvtColor(backarray, self.color_mode)
         else:
-            outputbgra = backarray
+            outputbgra = cv2.cvtColor(backarray, cv2.COLOR_RGBA2BGRA)
         outputrgb = cv2.cvtColor(outputbgra, cv2.COLOR_BGRA2RGB)
         if self.output is not None:
             self.output.write(outputrgb)
@@ -737,7 +737,7 @@ class Pipeline:
             except:
                 print('failed to write to framebuffer device {} ...disabling it.'.format(self.framebufdev))
                 self.framebufdev = None
-        await streaminfo.set_frame(outputrgb)
+        await streaminfo.set_frame(outputbgra)
 
         #cv2.imshow('main', outputrgb)
 
