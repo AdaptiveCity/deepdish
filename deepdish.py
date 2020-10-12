@@ -387,6 +387,13 @@ class Pipeline:
         if self.args.cpu_temp_file is not None:
             self.cpu_temp_file = self.args.cpu_temp_file
 
+        self.powersave_delay = 0
+        self.powersave_delay_maximum = float(self.args.powersave_delay_maximum) / 1000.0
+        if self.args.disable_powersaving:
+            self.powersave_delay_increment = 0
+        else:
+            self.powersave_delay_increment = float(self.args.powersave_delay_increment) / 1000.0
+
     async def init_mqtt(self):
         if self.args.mqtt_broker is not None:
             self.mqtt = MQTTClient('deepdish')
@@ -492,6 +499,10 @@ class Pipeline:
 
                     q.put_nowait((frame, dt_cap, t_frame, time()))
 
+                    # slow down pipeline if trying to save power
+                    if self.powersave_delay > 0:
+                        await asyncio.sleep(self.powersave_delay)
+
 
         finally:
             self.cap.release()
@@ -550,6 +561,14 @@ class Pipeline:
                         labels.append(lbl)
                         scores.append(scr)
                 t2 = time()
+
+                # start slowing down the pipeline if there are no objects in scene
+                if not self.args.disable_powersaving and len(boxes) == 0:
+                    self.powersave_delay += self.powersave_delay_increment
+                    if self.powersave_delay > self.powersave_delay_maximum:
+                        self.powersave_delay = self.powersave_delay_maximum
+                else:
+                    self.powersave_delay = 0
 
                 # Send results to next step in pipeline
                 elements = [FrameInfo(t_frame, self.frame_count),
@@ -910,6 +929,12 @@ def get_arguments():
                         default='LABEL', metavar='CATEGORY', choices=['ID','id','LABEL','label','NONE','none'])
     parser.add_argument('--cpu-temp-file', help='Specify system file to read CPU temperature from',
                         default=None, metavar='FILE')
+    parser.add_argument('--disable-powersaving', help='Disable the insertion of powersaving delay into the pipeline.',
+                        default=False, action='store_true')
+    parser.add_argument('--powersave-delay-increment', help='How much delay in milliseconds to add for every frame observed with zero objects in it.',
+                        default=10, metavar='MSEC',type=int)
+    parser.add_argument('--powersave-delay-maximum', help='Maximum amount of pipeline delay in milliseconds to wait when observing a scene with no objects in it.',
+                        default=500, metavar='MSEC',type=int)
     args = parser.parse_args()
 
     if args.deepsorthome is None:
