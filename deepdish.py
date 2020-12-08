@@ -460,6 +460,7 @@ class Pipeline:
                 if h is None:
                     h = int(nums[1])
             self.framebufres = (w, h)
+            print('Framebuffer device: {} resolution: {},{}'.format(self.framebufdev,w,h))
 
     def shutdown(self):
         self.running = False
@@ -753,7 +754,10 @@ class Pipeline:
             try:
                 with open(self.framebufdev, 'wb') as buf:
                     buf.write(outputfbuf)
-            except:
+            except Exception as e:
+                print(type(e))
+                print(e.args)
+                print(e)
                 print('failed to write to framebuffer device {} ...disabling it.'.format(self.framebufdev))
                 self.framebufdev = None
         await streaminfo.set_frame(outputbgra)
@@ -870,9 +874,9 @@ def get_arguments():
     parser.add_argument('--framebuffer-device', '-F', help='Framebuffer device',
                         default='/dev/fb0', metavar='DEVICE')
     parser.add_argument('--framebuffer-width', help='Framebuffer device resolution (width) override',
-                        default=None, metavar='WIDTH')
+                        default=None, metavar='WIDTH',type=int)
     parser.add_argument('--framebuffer-height', help='Framebuffer device resolution (height) override',
-                        default=None, metavar='HEIGHT')
+                        default=None, metavar='HEIGHT',type=int)
     parser.add_argument('--color-mode', help='Color mode for framebuffer, default: RGBA (see OpenCV docs)',
                         default=None, metavar='MODE')
     parser.add_argument('--max-cosine-distance', help='Max cosine distance', metavar='N',
