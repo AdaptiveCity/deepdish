@@ -865,7 +865,7 @@ def get_arguments():
     parser.add_argument('--encoder-batch-size', help='Batch size for feature encoder inference',
                         default=32, type=int, metavar='N')
     parser.add_argument('--labels', help='File path of labels file.', required=True)
-    parser.add_argument('--framebuffer', help='Disable framebuffer display',
+    parser.add_argument('--framebuffer', help='Enable framebuffer display',
                         required=False, action='store_true')
     parser.add_argument('--framebuffer-device', '-F', help='Framebuffer device',
                         default='/dev/fb0', metavar='DEVICE')
