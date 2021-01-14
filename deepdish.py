@@ -22,7 +22,6 @@ from PIL import ImageFont
 
 from tools.ssd_mobilenet import SSD_MOBILENET
 from tools.yolo import YOLO
-from tools.edgetpu import EDGETPU
 from tools.intersection import any_intersection, intersection
 
 from deep_sort import preprocessing
@@ -329,6 +328,7 @@ class Pipeline:
         if 'yolo' in self.args.model:
             self.object_detector = YOLO(wanted_labels=self.wanted_labels, model_file=self.args.model, label_file=self.args.labels, num_threads=self.args.num_threads)
         elif self.args.edgetpu:
+            from tools.edgetpu import EDGETPU
             self.object_detector = EDGETPU(wanted_labels=self.wanted_labels, model_file=self.args.model, label_file=self.args.labels,
                     num_threads=self.args.num_threads, edgetpu=self.args.edgetpu)
         else:
