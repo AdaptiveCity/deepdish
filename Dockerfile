@@ -12,7 +12,7 @@ RUN apt-get install -y --allow-downgrades \
             vim less wget \
             libcudnn7=7.6.5.32-1+cuda10.0 # force install of cuda10.0 compatible package
 RUN pip3 install --upgrade pip
-RUN pip3 install keras==2.3.1 quart gmqtt
+RUN pip3 install keras==2.3.1 quart gmqtt cameratransform scipy==1.1.0 uvloop
 RUN pip3 install https://dl.google.com/coral/python/tflite_runtime-2.1.0.post1-cp36-cp36m-linux_x86_64.whl
 
 USER root
