@@ -23,6 +23,7 @@ from PIL import ImageFont
 from tools.ssd_mobilenet import SSD_MOBILENET
 from tools.yolo import YOLO
 from tools.intersection import any_intersection, intersection
+import cameratransform as ct
 
 from deep_sort import preprocessing
 from deep_sort import nn_matching
@@ -393,6 +394,20 @@ class Pipeline:
             self.powersave_delay_increment = 0
         else:
             self.powersave_delay_increment = float(self.args.powersave_delay_increment) / 1000.0
+
+        self.cam = None
+        if self.args.three_d:
+            if self.args.focallength_mm is not None and self.args.sensor_width_mm is not None and self.args.sensor_height_mm is not None and self.args.elevation_m is not None and self.args.tilt_deg is not None:
+                image_size = (self.args.camera_width, self.args.camera_height)
+                self.cam = ct.Camera(ct.RectilinearProjection(focallength_mm=self.args.focallength_mm,
+                                                              sensor=(self.args.sensor_width_mm, self.args.sensor_height_mm),
+                                                              image=image_size),
+                                     ct.SpatialOrientation(elevation_m=self.args.elevation_m,
+                                                           tilt_deg=self.args.tilt_deg,
+                                                           roll_deg=self.args.roll_deg))
+
+            else:
+                raise Error('3-D transform requires focallength, sensor size, camera elevation and tilt.')
 
     async def init_mqtt(self):
         if self.args.mqtt_broker is not None:
@@ -940,6 +955,13 @@ def get_arguments():
                         default=10, metavar='MSEC',type=int)
     parser.add_argument('--powersave-delay-maximum', help='Maximum amount of pipeline delay in milliseconds to wait when observing a scene with no objects in it.',
                         default=500, metavar='MSEC',type=int)
+    parser.add_argument('--focallength-mm', help='Focal length in mm', default=None, metavar='MM',type=float)
+    parser.add_argument('--sensor-width-mm', help='Sensor width in mm', default=None, metavar='MM',type=float)
+    parser.add_argument('--sensor-height-mm', help='Sensor height in mm', default=None, metavar='MM',type=float)
+    parser.add_argument('--elevation-m', help='Elevation of camera in m', default=None, metavar='M',type=float)
+    parser.add_argument('--tilt-deg', help='Camera tilt (straight down is 0 degrees)', default=None, metavar='DEG',type=float)
+    parser.add_argument('--roll-deg', help='Camera roll (horizontal is 0 degrees)', default=0.0, metavar='DEG',type=float)
+    parser.add_argument('--3d', help='Toggle 3-D perspective unprojection transformation', default=False, action='store_true',dest='three_d')
     args = parser.parse_args()
 
     if args.deepsorthome is None:
