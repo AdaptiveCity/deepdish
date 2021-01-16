@@ -312,11 +312,27 @@ class TopDownView:
         (viewpos, viewsize) = topdownview
         self.viewpos = np.array(viewpos,dtype=int)
         self.viewsize = np.array(viewsize,dtype=int)
-        self.priority = 10
+        self.priority = 9
 
     def do_render(self, render):
         pts = list(np.array([self.viewpos, self.viewpos + self.viewsize]).reshape(-1))
         render.draw.rectangle(pts, fill=(0, 0, 0))
+
+class TopDownObj():
+    def __init__(self, topdownview, pt):
+        (viewpos, viewsize) = topdownview
+        self.viewpos = np.array(viewpos,dtype=int)
+        self.viewsize = np.array(viewsize,dtype=int)
+        # transform point into top-down view window
+        self.pt = np.array(pt) * np.array([1, -1]) + viewsize * np.array([0.5, 1]) + viewpos
+        self.priority = 10
+        self.fill = (0, 255, 0)
+        self.width = 2
+
+    def do_render(self, render):
+        half = np.array([self.width/2.0, self.width/2.0])
+        pts = list(np.array([self.pt - half, self.pt + half],dtype=int).reshape(-1))
+        render.draw.rectangle(pts, fill=self.fill)
 
 ##################################################
 
@@ -700,6 +716,11 @@ class Pipeline:
                 else:
                     annot = ''
                 elements.append(TrackedObject(bbox, annot))
+
+                if self.cam is not None and self.topdownview is not None:
+                    # Add to top-down view using cameratransform
+                    pt = self.cam.spaceFromImage(bottomCentre)[:2]
+                    elements.append(TopDownObj(self.topdownview,pt))
 
             for det in detections:
                 bbox = det.to_tlbr()
