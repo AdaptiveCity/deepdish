@@ -307,6 +307,17 @@ class CountingStats:
             (dx, dy) = font.getsize(str(self.poscount[lbl]))
             render.draw.text((w - dx, cursor), str(self.poscount[lbl]), fill=self.font_fill_poscount, font=font)
 
+class TopDownView:
+    def __init__(self, topdownview):
+        (viewpos, viewsize) = topdownview
+        self.viewpos = np.array(viewpos,dtype=int)
+        self.viewsize = np.array(viewsize,dtype=int)
+        self.priority = 10
+
+    def do_render(self, render):
+        pts = list(np.array([self.viewpos, self.viewpos + self.viewsize]).reshape(-1))
+        render.draw.rectangle(pts, fill=(0, 0, 0))
+
 ##################################################
 
 class Pipeline:
@@ -396,12 +407,14 @@ class Pipeline:
             self.powersave_delay_increment = float(self.args.powersave_delay_increment) / 1000.0
 
         self.cam = None
+        self.topdownview = None
         if self.args.three_d:
             if self.args.focallength_mm is not None and self.args.sensor_width_mm is not None and self.args.sensor_height_mm is not None and self.args.elevation_m is not None and self.args.tilt_deg is not None:
-                image_size = (self.args.camera_width, self.args.camera_height)
+                (w, h) = (self.args.camera_width, self.args.camera_height)
+                self.topdownview = ((0, 0), (w/4, h/4))
                 self.cam = ct.Camera(ct.RectilinearProjection(focallength_mm=self.args.focallength_mm,
                                                               sensor=(self.args.sensor_width_mm, self.args.sensor_height_mm),
-                                                              image=image_size),
+                                                              image=(w, h)),
                                      ct.SpatialOrientation(elevation_m=self.args.elevation_m,
                                                            tilt_deg=self.args.tilt_deg,
                                                            roll_deg=self.args.roll_deg))
@@ -691,6 +704,11 @@ class Pipeline:
             for det in detections:
                 bbox = det.to_tlbr()
                 elements.append(DetectedObject(bbox))
+
+
+            if self.topdownview is not None:
+                # Draw background for top-down view
+                elements.append(TopDownView(self.topdownview))
 
             elements.append(CountingStats(self.negcount, self.poscount))
             t2=time()
