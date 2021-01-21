@@ -424,17 +424,25 @@ class Pipeline:
 
         self.cam = None
         self.topdownview = None
+        self.topdownview_scalefactors = None
         if self.args.three_d:
             if self.args.focallength_mm is not None and self.args.sensor_width_mm is not None and self.args.sensor_height_mm is not None and self.args.elevation_m is not None and self.args.tilt_deg is not None:
                 (w, h) = (self.args.camera_width, self.args.camera_height)
-                self.topdownview = ((0, 0), (w/4, h/4))
                 self.cam = ct.Camera(ct.RectilinearProjection(focallength_mm=self.args.focallength_mm,
                                                               sensor=(self.args.sensor_width_mm, self.args.sensor_height_mm),
                                                               image=(w, h)),
                                      ct.SpatialOrientation(elevation_m=self.args.elevation_m,
                                                            tilt_deg=self.args.tilt_deg,
                                                            roll_deg=self.args.roll_deg))
-
+                defaultviewsize = ((0, 0), (w/4, h/4))
+                if self.args.topdownview_size_m is not None:
+                    size = np.array(list(map(int,self.args.topdownview_size_m.strip().split(','))),dtype=float)
+                    scalefactors = np.array(defaultviewsize[1],dtype=float) / size
+                    self.topdownview = defaultviewsize
+                    self.topdownview_scalefactors = scalefactors
+                else:
+                    self.topdownview = defaultviewsize
+                    self.topdownview_scalefactors = np.array([1,1])
             else:
                 raise Error('3-D transform requires focallength, sensor size, camera elevation and tilt.')
 
@@ -720,7 +728,13 @@ class Pipeline:
                 if self.cam is not None and self.topdownview is not None:
                     # Add to top-down view using cameratransform
                     pt = self.cam.spaceFromImage(bottomCentre)[:2]
-                    elements.append(TopDownObj(self.topdownview,pt))
+                    pts_pretransform = self.cam.spaceFromImage(np.array(self.db[i]))
+                    if self.topdownview_scalefactors is not None:
+                        pts_postransform = self.topdownview_scalefactors * pts_pretransform[:,:2]
+                        pts = pts_postransform[:,:2].reshape(-1)
+                    else:
+                        pts = pts_pretransform[:,:2].reshape(-1)
+                    elements.append(TopDownObj(self.topdownview,pts))
 
             for det in detections:
                 bbox = det.to_tlbr()
@@ -1000,6 +1014,7 @@ def get_arguments():
     parser.add_argument('--elevation-m', help='Elevation of camera in m', default=None, metavar='M',type=float)
     parser.add_argument('--tilt-deg', help='Camera tilt (straight down is 0 degrees)', default=None, metavar='DEG',type=float)
     parser.add_argument('--roll-deg', help='Camera roll (horizontal is 0 degrees)', default=0.0, metavar='DEG',type=float)
+    parser.add_argument('--topdownview-size-m', help='X,Y in metres describing top-down view of area covered by camera.', default=None, metavar='X,Y')
     parser.add_argument('--3d', help='Toggle 3-D perspective unprojection transformation', default=False, action='store_true',dest='three_d')
     args = parser.parse_args()
 
