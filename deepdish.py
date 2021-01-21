@@ -319,20 +319,23 @@ class TopDownView:
         render.draw.rectangle(pts, fill=(0, 0, 0))
 
 class TopDownObj():
-    def __init__(self, topdownview, pt):
+    def __init__(self, topdownview, pts):
         (viewpos, viewsize) = topdownview
         self.viewpos = np.array(viewpos,dtype=int)
         self.viewsize = np.array(viewsize,dtype=int)
-        # transform point into top-down view window
-        self.pt = np.array(pt) * np.array([1, -1]) + viewsize * np.array([0.5, 1]) + viewpos
+        # transform points into top-down view window
+        self.pts = pts.reshape(-1, 2) * np.array([1, -1]) + viewsize * np.array([0.5, 1]) + viewpos
         self.priority = 10
         self.fill = (0, 255, 0)
         self.width = 2
 
     def do_render(self, render):
         half = np.array([self.width/2.0, self.width/2.0])
-        pts = list(np.array([self.pt - half, self.pt + half],dtype=int).reshape(-1))
-        render.draw.rectangle(pts, fill=self.fill)
+        pt0 = self.pts[-1]
+        rectpts = list(np.array([pt0 - half, pt0 + half],dtype=int).reshape(-1))
+        render.draw.rectangle(rectpts, fill=self.fill)
+        linepts = list(self.pts.reshape(-1))
+        render.draw.line(linepts, fill=self.fill, width=self.width)
 
 ##################################################
 
