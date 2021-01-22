@@ -55,3 +55,8 @@ Use the EdgeTPU backend with one of the SSD MobileNet v2 models and track object
 
 * `{"acp_ts": "1606480354.9866521", "acp_id": "deepdish-dd01", "temp": 58.426, "poscount_person": 6, "negcount_person": 7, "diff_person": -1, "intcount_person": 13, "delcount_person": 2}`
   * Heartbeat pulse. Same status as above.
+
+## 3-D top-down view examples
+
+Camera looking down at 30m by 20m road scene from a height of 5m, angled 40 degrees from vertical. Camera parameters: sensor size 6.99mm x 5.55mm with a focal length of 3.2mm.
+- `python3 deepdish.py  --model detectors/yolo --labels detectors/yolo --encoder-model encoders/mars-64x32x3.pb --input input_file.mp4 --output output_file.mp4 --3d --sensor-width-mm 6.69 --sensor-height-mm 5.55 --focallength-mm 3.2 --elevation-m 5 --tilt-deg 40 --roll-deg 0 --topdownview-size-m "30,20" --wanted-labels 'person,bicycle,car'`
