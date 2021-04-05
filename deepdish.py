@@ -353,24 +353,27 @@ class Pipeline:
         # Process comma-separated list of wanted labels
         self.wanted_labels = self.args.wanted_labels.strip().split(',')
 
+        self.basedir = self.args.basedir
+        model = os.path.join(self.basedir, self.args.model)
+        labels = os.path.join(self.basedir, self.args.labels)
         # Initialise object detector (for some reason it has to happen
         # here & not within detect_objects(), or else the inference engine
         # gets upset and starts throwing NaNs at me. Thanks, Python.)
         if 'yolo' in self.args.model:
-            self.object_detector = YOLO(wanted_labels=self.wanted_labels, model_file=self.args.model, label_file=self.args.labels, num_threads=self.args.num_threads)
+            self.object_detector = YOLO(wanted_labels=self.wanted_labels, model_file=model, label_file=labels, num_threads=self.args.num_threads)
         elif self.args.edgetpu:
             from tools.edgetpu import EDGETPU
-            self.object_detector = EDGETPU(wanted_labels=self.wanted_labels, model_file=self.args.model, label_file=self.args.labels,
+            self.object_detector = EDGETPU(wanted_labels=self.wanted_labels, model_file=model, label_file=labels,
                     num_threads=self.args.num_threads, edgetpu=self.args.edgetpu)
         else:
-            self.object_detector = SSD_MOBILENET(wanted_labels=self.wanted_labels, model_file=self.args.model, label_file=self.args.labels,
+            self.object_detector = SSD_MOBILENET(wanted_labels=self.wanted_labels, model_file=model, label_file=labels,
                     num_threads=self.args.num_threads, edgetpu=self.args.edgetpu)
 
         # Initialise feature encoder
         if self.args.encoder_model is None:
-            model_filename = '{}/mars-64x32x3.pb'.format(self.args.deepsorthome)
+            model_filename = os.path.join(self.args.deepsorthome, 'mars-64x32x3.pb')
         else:
-            model_filename = self.args.encoder_model
+            model_filename = os.path.join(self.args.deepsorthome, self.args.encoder_model)
 
         self.encoder = gdet.create_box_encoder(model_filename,batch_size=self.args.encoder_batch_size)
 
@@ -1023,6 +1026,7 @@ def get_arguments():
 
     if args.deepsorthome is None:
         args.deepsorthome = basedir
+    args.basedir = basedir
 
     streamFilename = args.stream_path
 
