@@ -478,6 +478,11 @@ class Pipeline:
         else:
             # Capture every frame from the video file
             self.everyframe = threading.Event()
+            # Disable power-saving delay mechanism
+            self.args.disable_powersaving = True
+            self.powersave_delay_increment = 0
+
+        # Set up the OpenCV video capture
         self.cap = cv2.VideoCapture(self.input)
         self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
