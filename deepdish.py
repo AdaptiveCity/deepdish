@@ -433,10 +433,10 @@ class Pipeline:
         self.topdownview_scalefactors = None
         if self.args.three_d:
             if self.args.focallength_mm is not None and self.args.sensor_width_mm is not None and self.args.sensor_height_mm is not None and self.args.elevation_m is not None and self.args.tilt_deg is not None:
-                (w, h) = (self.args.camera_width, self.args.camera_height)
+                (w, h) = self.input_size
                 self.cam = ct.Camera(ct.RectilinearProjection(focallength_mm=self.args.focallength_mm,
                                                               sensor=(self.args.sensor_width_mm, self.args.sensor_height_mm),
-                                                              image=(w, h)),
+                                                              image=self.input_size),
                                      ct.SpatialOrientation(elevation_m=self.args.elevation_m,
                                                            tilt_deg=self.args.tilt_deg,
                                                            roll_deg=self.args.roll_deg))
@@ -466,20 +466,22 @@ class Pipeline:
         if self.args.input_cvat_dir is not None:
             # Set up frame-by-frame from files in input CVAT directory
             self.input = os.path.join(self.args.input_cvat_dir, "images/frame_%06d.jpg")
+            # Open test file
+            with Image.open(self.input % 1) as im:
+                self.input_size = im.size
             # Capture every frame from the video file / dir
             self.everyframe = threading.Event()
             # Disable power-saving delay mechanism
             self.args.disable_powersaving = True
             self.powersave_delay_increment = 0
         elif self.input is None:
+            self.input_size = (self.args.camera_width, self.args.camera_height)
             if self.args.gstreamer is not None:
                 src = self.args.gstreamer
             elif self.args.gstreamer_nvidia:
-                w, h = self.args.camera_width, self.args.camera_height
-                src = "nvarguscamerasrc ! video/x-raw(memory:NVMM), width=(int){}, height=(int){}, format=(string)NV12, framerate=(fraction)30/1 ! nvvidconv flip-method=0 ! video/x-raw, format=(string)BGRx ! videoconvert ! video/x-raw, format=(string)BGR ! appsink drop=true".format(w,h)
+                src = "nvarguscamerasrc ! video/x-raw(memory:NVMM), width=(int){}, height=(int){}, format=(string)NV12, framerate=(fraction)30/1 ! nvvidconv flip-method=0 ! video/x-raw, format=(string)BGRx ! videoconvert ! video/x-raw, format=(string)BGR ! appsink drop=true".format(*self.input_size)
             else:
                 src = self.args.camera
-
             self.input = src
             # Allow live camera frames to be dropped
             self.everyframe = None
@@ -493,10 +495,12 @@ class Pipeline:
         # Set up the OpenCV video capture
         self.cap = cv2.VideoCapture(self.input)
         self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        # Just in case input_size wasn't already set up
+        self.input_size = (int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
 
         # Configure the 'counting line' in the camera viewport
         if self.args.line is None:
-            w, h = self.args.camera_width, self.args.camera_height
+            w, h = self.input_size
             self.countline = np.array([[w/2,0],[w/2,h]],dtype=int)
         else:
             self.countline = np.array(list(map(int,self.args.line.strip().split(','))),dtype=int).reshape(2,2)
@@ -509,16 +513,17 @@ class Pipeline:
             fps = self.cap.get(cv2.CAP_PROP_FPS)
         else:
             fps = 15 # FIXME: no way of determining FPS
-        (w, h) = (self.args.camera_width, self.args.camera_height)
-        self.backbuf = Image.new("RGBA", (w, h), (0,0,0,0))
+        w, h = self.input_size
+
+        self.backbuf = Image.new("RGBA", self.input_size, (0,0,0,0))
         self.draw = ImageDraw.Draw(self.backbuf)
         if self.args.output_cvat_dir is None:
-            self.output = cv2.VideoWriter(self.args.output,fourcc, fps, (w, h))
+            self.output = cv2.VideoWriter(self.args.output,fourcc, fps, self.input_size)
         else:
             # write individual frame files in CVAT format
             outpath = os.path.join(self.args.output_cvat_dir,'images','frame_%06d.jpg')
             os.makedirs(os.path.dirname(outpath), exist_ok=True)
-            self.output = cv2.VideoWriter(outpath, 0, 0, (w, h))
+            self.output = cv2.VideoWriter(outpath, 0, 0, self.input_size)
         if not self.args.framebuffer:
             self.framebufdev = None
         else:
@@ -532,6 +537,7 @@ class Pipeline:
                 self.framebufdev = None
 
         if self.framebufdev is not None:
+            # Framebuffer size can be different than input/output size
             (w, h) = (self.args.framebuffer_width, self.args.framebuffer_height)
             if w is None or h is None:
                 nums = re.findall('(.*),(.*)', open(vsizefile).read())[0]
@@ -576,7 +582,7 @@ class Pipeline:
                         # If we need to flip the image vertically
                         frame = cv2.flip(frame, 0)
                     # Ensure frame is proper size
-                    frame = cv2.resize(frame, (self.args.camera_width, self.args.camera_height))
+                    frame = cv2.resize(frame, self.input_size)
 
                     q.put_nowait((frame, dt_cap, t_frame, time()))
 
@@ -626,7 +632,7 @@ class Pipeline:
                 boxes = []
                 labels = []
                 scores = []
-                max_x, max_y = self.args.camera_width, self.args.camera_height
+                max_x, max_y = self.input_size
                 for ((x,y,w,h), lbl, scr) in zip(boxes0, labels0, scores0):
                     if np.any(np.isnan(boxes0)):
                         # Drop any rubbish results
@@ -871,7 +877,7 @@ class Pipeline:
                 e.do_text(handle, elements)
 
     async def render_output(self, q_in):
-        (output_w, output_h) = (self.args.camera_width, self.args.camera_height)
+        (output_w, output_h) = self.input_size
         ratio = 1 #fixme
         render = RenderInfo(ratio, FontLib(output_w), self.draw, self.backbuf)
 
