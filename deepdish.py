@@ -848,9 +848,9 @@ class Pipeline:
             outputbgra = cv2.cvtColor(backarray, self.color_mode)
         else:
             outputbgra = cv2.cvtColor(backarray, cv2.COLOR_RGBA2BGRA)
-        outputrgb = cv2.cvtColor(outputbgra, cv2.COLOR_BGRA2RGB)
+        outputbgr = cv2.cvtColor(outputbgra, cv2.COLOR_BGRA2BGR)
         if self.output is not None:
-            self.output.write(outputrgb)
+            self.output.write(outputbgr)
         if self.framebufdev is not None:
             outputrgba = cv2.cvtColor(outputbgra, cv2.COLOR_BGRA2RGBA)
             output565 = cv2.cvtColor(outputbgra, cv2.COLOR_RGBA2BGR565)
@@ -866,7 +866,7 @@ class Pipeline:
                 self.framebufdev = None
         await streaminfo.set_frame(outputbgra)
 
-        #cv2.imshow('main', outputrgb)
+        #cv2.imshow('main', outputbgr)
 
     def text_output(self, handle, elements):
         # Sort elements by priority
