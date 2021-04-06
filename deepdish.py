@@ -334,7 +334,7 @@ class TopDownObj():
         pt0 = self.pts[-1]
         rectpts = list(np.array([pt0 - half, pt0 + half],dtype=int).reshape(-1))
         render.draw.rectangle(rectpts, fill=self.fill)
-        linepts = list(self.pts.reshape(-1))
+        linepts = list(np.array(self.pts.reshape(-1),dtype=int))
         render.draw.line(linepts, fill=self.fill, width=self.width)
 
 ##################################################
