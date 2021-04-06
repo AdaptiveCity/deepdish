@@ -463,7 +463,15 @@ class Pipeline:
 
     def init_camera(self):
         self.input = self.args.input
-        if self.input is None:
+        if self.args.input_cvat_dir is not None:
+            # Set up frame-by-frame from files in input CVAT directory
+            self.input = os.path.join(self.args.input_cvat_dir, "images/frame_%06d.jpg")
+            # Capture every frame from the video file / dir
+            self.everyframe = threading.Event()
+            # Disable power-saving delay mechanism
+            self.args.disable_powersaving = True
+            self.powersave_delay_increment = 0
+        elif self.input is None:
             if self.args.gstreamer is not None:
                 src = self.args.gstreamer
             elif self.args.gstreamer_nvidia:
@@ -476,7 +484,7 @@ class Pipeline:
             # Allow live camera frames to be dropped
             self.everyframe = None
         else:
-            # Capture every frame from the video file
+            # Capture every frame from the video file in self.input
             self.everyframe = threading.Event()
             # Disable power-saving delay mechanism
             self.args.disable_powersaving = True
@@ -497,11 +505,20 @@ class Pipeline:
     def init_output(self, output):
         self.color_mode = None # fixme
         fourcc = cv2.VideoWriter_fourcc(*'MP4V')
-        fps = self.cap.get(cv2.CAP_PROP_FPS)
+        if self.cap is not None:
+            fps = self.cap.get(cv2.CAP_PROP_FPS)
+        else:
+            fps = 15 # FIXME: no way of determining FPS
         (w, h) = (self.args.camera_width, self.args.camera_height)
         self.backbuf = Image.new("RGBA", (w, h), (0,0,0,0))
         self.draw = ImageDraw.Draw(self.backbuf)
-        self.output = cv2.VideoWriter(self.args.output,fourcc, fps, (w, h))
+        if self.args.output_cvat_dir is None:
+            self.output = cv2.VideoWriter(self.args.output,fourcc, fps, (w, h))
+        else:
+            # write individual frame files in CVAT format
+            outpath = os.path.join(self.args.output_cvat_dir,'images','frame_%06d.jpg')
+            os.makedirs(os.path.dirname(outpath), exist_ok=True)
+            self.output = cv2.VideoWriter(outpath, 0, 0, (w, h))
         if not self.args.framebuffer:
             self.framebufdev = None
         else:
@@ -569,7 +586,8 @@ class Pipeline:
 
 
         finally:
-            self.cap.release()
+            if self.cap is not None:
+                self.cap.release()
 
     def run_object_detector(self, frame):
         t1 = time()
@@ -936,7 +954,11 @@ def get_arguments():
                         action='store_true', default=False)
     parser.add_argument('--input', help="input MP4 file for video file input (instead of camera)",
                         default=None)
+    parser.add_argument('--input-cvat-dir', help="input CVAT-format data directory (instead of camera)",
+                        default=None)
     parser.add_argument('--output', help="output file with annotated video frames",
+                        default=None)
+    parser.add_argument('--output-cvat-dir', help="output annotations to CVAT-format data directory",
                         default=None)
     parser.add_argument('--line', '-L', help="counting line: x1,y1,x2,y2",
                         default=None)
