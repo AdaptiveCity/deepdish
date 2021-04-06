@@ -38,6 +38,7 @@ import aiofiles
 import concurrent.futures
 from gmqtt import Client as MQTTClient
 import json
+import xml.etree.ElementTree as ET
 
 from quart import Quart, Response, current_app
 import threading
@@ -469,6 +470,12 @@ class Pipeline:
             # Open test file
             with Image.open(self.input % 1) as im:
                 self.input_size = im.size
+            # Open XML file if it exists
+            self.annotationfile = os.path.join(self.args.input_cvat_dir, "annotations.xml")
+            try:
+                self.xmltree = ET.parse(self.annotationfile)
+            except FileNotFoundError:
+                self.xmltree = None
             # Capture every frame from the video file / dir
             self.everyframe = threading.Event()
             # Disable power-saving delay mechanism
@@ -550,6 +557,11 @@ class Pipeline:
 
     def shutdown(self):
         self.running = False
+        # Write CVAT-format annotations XML file if possible
+        if self.args.output_cvat_dir is not None and self.xmltree is not None:
+            xmlout = os.path.join(self.args.output_cvat_dir, "annotations.xml")
+            with open(xmlout, mode='wb') as f:
+                self.xmltree.write(f, xml_declaration=True, encoding='utf-8', short_empty_elements=False)
         for p in asyncio.Task.all_tasks():
             p.cancel()
 
