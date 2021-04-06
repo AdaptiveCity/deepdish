@@ -32,9 +32,10 @@ RUN chown -R user:user /work # /yolo
 RUN passwd -d root
 RUN sed -i 's/nullok_secure/nullok/' /etc/pam.d/common-auth
 
-RUN echo $'#!/bin/bash\nPYTHONPATH=/deepdish DEEPDISHHOME=/deepdish python3 /deepdish/deepdish.py $@' > /usr/bin/deepdish.sh
+RUN echo $'#!/bin/bash\nPYTHONPATH=/deepdish DEEPDISHHOME=/deepdish python3 /deepdish/deepdish.py $@' > /usr/bin/deepdish
+RUN echo $'#!/bin/bash\nPYTHONPATH=/deepdish DEEPDISHHOME=/deepdish python3 /deepdish/deepdish.py --model detectors/mobilenet/ssdmobilenetv1.tflite --labels detectors/mobilenet/labels.txt --encoder-model encoders/mars-64x32x3.pb --input "$1" --output "$2" ${@:3}' > /usr/bin/simple
 
-RUN chmod +x /usr/bin/deepdish.sh
+RUN chmod +x /usr/bin/deepdish /usr/bin/simple
 
 COPY *.py /deepdish/
 COPY detectors/mobilenet/* /deepdish/detectors/mobilenet/
