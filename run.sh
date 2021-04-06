@@ -6,4 +6,4 @@ docker run --gpus 1 --net=host -it --rm \
        -v $PWD:/work \
        -v "$HOME":"$HOME":ro \
        -u `id -u`:`id -g` \
-       deepdish $*
+       mrdanish/deepdish $*
