@@ -63,6 +63,7 @@ class MBox:
         self.lock.release()
 
 def capthread_f(cap, box, everyframe):
+    count = 0
     try:
         prev_t = time()
         ret = True
@@ -74,6 +75,7 @@ def capthread_f(cap, box, everyframe):
             t2 = time()
             #print('{:.02f}ms'.format((t2-prev_t)*1000))
             prev_t = t2
+            count += 1
             box.set_message((frame,t2,t2-t1))
             # If we are ensuring every frame is processed then wait for
             # synchronising event to be triggered
@@ -576,27 +578,40 @@ class Pipeline:
         while msg is None:
             msg = box.get_message()
         (frame, t_frame, dt_cap) = msg
+        # prevent race condition between this and capthread if in everyframe mode:
+        if self.everyframe: box.set_message(None)
         return (frame, t_frame, dt_cap)
 
     async def capture(self, q, box):
         try:
             with concurrent.futures.ThreadPoolExecutor() as pool:
+                # The purpose of this loop is to decouple the capthread from the pipeline.
+
+                # When dealing with a live video stream (having
+                # everyframe=False) then we must pull frames off the
+                # live camera as fast as they appear, or else OpenCV
+                # starts queueing them up internally (a rather poor
+                # design) and we fall behind 'real time'.
                 while self.running:
                     frame = None
-                    # Fetch next frame
+                    # Fetch frame from box where capthread has placed it
                     (frame, t_frame, dt_cap) = await self.loop.run_in_executor(pool, self.read_frame_from_box, box)
                     if frame is None:
                         print('No more frames.')
                         self.shutdown()
                         break
-
                     if self.args.camera_flip:
                         # If we need to flip the image vertically
                         frame = cv2.flip(frame, 0)
                     # Ensure frame is proper size
                     frame = cv2.resize(frame, self.input_size)
 
+                    # q is a 1-element FreshQueue that overwrites the existing element if there is one
                     q.put_nowait((frame, dt_cap, t_frame, time()))
+
+                    # wait for the next frame (threaded Event) if in everyframe mode
+                    if self.everyframe is not None:
+                        await self.loop.run_in_executor(None, self.everyframe.wait)
 
                     # slow down pipeline if trying to save power
                     if self.powersave_delay > 0:
@@ -620,7 +635,6 @@ class Pipeline:
 
         with concurrent.futures.ThreadPoolExecutor() as pool:
             while self.running:
-                self.frame_count += 1
 
                 # Obtain next video frame
                 (frame, dt_cap, t_frame, t_prev) = await q_in.get()
@@ -924,6 +938,7 @@ class Pipeline:
 
                 self.text_output(sys.stdout, elements)
 
+                self.frame_count += 1
                 if self.everyframe is not None:
                     # Notify other side that this frame is completely processed
                     self.everyframe.set()
