@@ -35,6 +35,7 @@ class YOLO(object):
         if wanted_labels is None:
             wanted_labels = ['person']
         self.wanted_labels = wanted_labels
+        self.labels = dict(enumerate(self.class_names))
 
     def _get_class(self):
         classes_path = os.path.expanduser(self.classes_path)

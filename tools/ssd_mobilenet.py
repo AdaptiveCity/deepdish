@@ -173,6 +173,8 @@ class SSD_MOBILENET():
       wanted_labels = ['person']
     self.wanted_labels = wanted_labels
     self.score_threshold = score_threshold
+    self.labels = self.ssdm.labels
+
   def detect_image(self, img):
     #t0 = time.time()
     inp = self.ssdm.prepare_image(img)
