@@ -573,50 +573,51 @@ class Pipeline:
             temp = float(line)
             return temp/1000
 
-    def read_frame_from_box(self, box):
-        msg = None
-        while msg is None:
-            msg = box.get_message()
-        (frame, t_frame, dt_cap) = msg
-        # prevent race condition between this and capthread if in everyframe mode:
-        if self.everyframe: box.set_message(None)
-        return (frame, t_frame, dt_cap)
-
     async def capture(self, q, box):
         try:
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                # The purpose of this loop is to decouple the capthread from the pipeline.
+            # The purpose of this loop is to decouple the capthread from the pipeline.
 
-                # When dealing with a live video stream (having
-                # everyframe=False) then we must pull frames off the
-                # live camera as fast as they appear, or else OpenCV
-                # starts queueing them up internally (a rather poor
-                # design) and we fall behind 'real time'.
-                while self.running:
-                    frame = None
-                    # Fetch frame from box where capthread has placed it
-                    (frame, t_frame, dt_cap) = await self.loop.run_in_executor(pool, self.read_frame_from_box, box)
-                    if frame is None:
-                        print('No more frames.')
-                        self.shutdown()
-                        break
-                    if self.args.camera_flip:
-                        # If we need to flip the image vertically
-                        frame = cv2.flip(frame, 0)
-                    # Ensure frame is proper size
-                    frame = cv2.resize(frame, self.input_size)
+            # When dealing with a live video stream (having
+            # everyframe=False) then we must pull frames off the
+            # live camera as fast as they appear, or else OpenCV
+            # starts queueing them up internally (a rather poor
+            # design) and we fall behind 'real time'.
+            while self.running:
+                # Fetch frame from box where capthread has placed it
+                frame = None
+                msg = None
+                while msg is None:
+                    msg = box.get_message()
+                    await asyncio.sleep(0) # cooperative yield
+                (frame, t_frame, dt_cap) = msg
 
-                    # q is a 1-element FreshQueue that overwrites the existing element if there is one
-                    q.put_nowait((frame, dt_cap, t_frame, time()))
+                if self.everyframe: box.set_message(None) # avoid repeating frames
 
-                    # wait for the next frame (threaded Event) if in everyframe mode
-                    if self.everyframe is not None:
-                        await self.loop.run_in_executor(None, self.everyframe.wait)
+                if frame is None:
+                    print('No more frames.')
+                    self.shutdown()
+                    break
 
-                    # slow down pipeline if trying to save power
-                    if self.powersave_delay > 0:
-                        await asyncio.sleep(self.powersave_delay)
+                if self.args.camera_flip:
+                    # If we need to flip the image vertically
+                    frame = cv2.flip(frame, 0)
+                # Ensure frame is proper size
+                frame = cv2.resize(frame, self.input_size)
 
+                # q is a 1-element FreshQueue that overwrites the existing element if there is one
+                q.put_nowait((frame, dt_cap, t_frame, time()))
+
+                # wait for the next frame (threaded Event) if in everyframe mode
+                if self.everyframe is not None:
+                    ret = False
+                    while not ret:
+                        # Some timeout value required, or else Unix signals won't get through.
+                        # wait() returns True if event set and False if timed-out.
+                        ret = await self.loop.run_in_executor(None, self.everyframe.wait, 0.1)
+
+                # slow down pipeline if trying to save power
+                if self.powersave_delay > 0:
+                    await asyncio.sleep(self.powersave_delay)
 
         finally:
             if self.cap is not None:
@@ -1110,11 +1111,22 @@ class CommandServer():
 
 cmdserver = None
 
+# signal handlers
+async def shutdown(sig, loop):
+    pipeline.running = False
+    # When the pipeline finishes, cancel remaining tasks
+    print('Shutting down all tasks (signal {})'.format(sig.name))
+    ps = [p for p in asyncio.all_tasks() if p is not asyncio.current_task()]
+    [p.cancel() for p in ps]
+    await asyncio.gather(*ps, return_exceptions=True)
+    loop.close()
+
 @webapp.before_serving
 async def main():
     global cmdserver
     loop = asyncio.get_event_loop()
     args = get_arguments()
+
     pipeline = Pipeline(args)
     await pipeline.init_mqtt()
     current_app.config.pipeline = pipeline
@@ -1122,17 +1134,9 @@ async def main():
         lambda: CommandServer(pipeline),
         local_addr=('127.0.0.1', args.control_port))
 
-    # signal handlers
-    def shutdown():
-        pipeline.running = False
-        # When the pipeline finishes, cancel remaining tasks
-        print('Shutting down all tasks')
-        for p in asyncio.Task.all_tasks():
-            p.cancel()
-
-    loop.add_signal_handler(signal.SIGINT, shutdown)
-    loop.add_signal_handler(signal.SIGTERM, shutdown)
-    loop.add_signal_handler(signal.SIGHUP, shutdown)
+    signals = (signal.SIGHUP, signal.SIGTERM, signal.SIGINT)
+    for s in signals:
+        loop.add_signal_handler(s, lambda s=s: asyncio.create_task(shutdown(s, loop)))
 
     # Kickstart the main pipeline
     asyncio.ensure_future(pipeline.start())
