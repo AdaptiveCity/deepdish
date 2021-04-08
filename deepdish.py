@@ -1104,14 +1104,16 @@ class CommandServer():
 cmdserver = None
 
 # signal handlers
-async def shutdown(sig, loop):
-    pipeline.running = False
-    # When the pipeline finishes, cancel remaining tasks
-    print('Shutting down all tasks (signal {})'.format(sig.name))
-    ps = [p for p in asyncio.all_tasks() if p is not asyncio.current_task()]
+async def cancel_and_shutdown(loop, sig=None):
+    if sig is not None: print('Signal received: {}'.format(sig.name))
+    print('Shutting down all tasks')
+    ps = [p for p in asyncio.Task.all_tasks() if p is not asyncio.Task.current_task()]
     [p.cancel() for p in ps]
     await asyncio.gather(*ps, return_exceptions=True)
-    loop.close()
+
+def handle_exception(loop, context):
+    msg = context.get("exception", context["message"])
+    asyncio.ensure_future(cancel_and_shutdown(loop))
 
 @webapp.before_serving
 async def main():
@@ -1128,7 +1130,8 @@ async def main():
 
     signals = (signal.SIGHUP, signal.SIGTERM, signal.SIGINT)
     for s in signals:
-        loop.add_signal_handler(s, lambda s=s: asyncio.create_task(shutdown(s, loop)))
+        loop.add_signal_handler(s, lambda s=s: asyncio.create_task(cancel_and_shutdown(loop, s)))
+    loop.set_exception_handler(handle_exception)
 
     # Kickstart the main pipeline
     asyncio.ensure_future(pipeline.start())
