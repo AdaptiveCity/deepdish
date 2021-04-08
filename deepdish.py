@@ -607,14 +607,6 @@ class Pipeline:
                 # q is a 1-element FreshQueue that overwrites the existing element if there is one
                 q.put_nowait((frame, dt_cap, t_frame, time()))
 
-                # wait for the next frame (threaded Event) if in everyframe mode
-                if self.everyframe is not None:
-                    ret = False
-                    while not ret:
-                        # Some timeout value required, or else Unix signals won't get through.
-                        # wait() returns True if event set and False if timed-out.
-                        ret = await self.loop.run_in_executor(None, self.everyframe.wait, 0.1)
-
                 # slow down pipeline if trying to save power
                 if self.powersave_delay > 0:
                     await asyncio.sleep(self.powersave_delay)
