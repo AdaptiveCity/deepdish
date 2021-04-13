@@ -626,68 +626,66 @@ class Pipeline:
         # Initialise background subtractor
         backSub = cv2.createBackgroundSubtractorMOG2()
 
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            while self.running:
+        while self.running:
+            # Obtain next video frame
+            (frame, dt_cap, t_frame, t_prev) = await q_in.get()
 
-                # Obtain next video frame
-                (frame, dt_cap, t_frame, t_prev) = await q_in.get()
+            t_frame_recv = time()
 
-                t_frame_recv = time()
+            # Apply background subtraction to find image-mask of areas of motion
+            if self.background_subtraction:
+                fgMask = backSub.apply(frame)
+                if self.args.enable_background_masking:
+                    frame = cv2.bitwise_and(frame,frame,mask = fgMask)
+            # Convert to PIL Image
+            #image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGRA2RGBA))
+            t_backsub = time()
 
-                # Apply background subtraction to find image-mask of areas of motion
-                if self.background_subtraction:
-                    fgMask = backSub.apply(frame)
-                    if self.args.enable_background_masking:
-                        frame = cv2.bitwise_and(frame,frame,mask = fgMask)
-                # Convert to PIL Image
-                #image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGRA2RGBA))
-                t_backsub = time()
+            # Run object detection engine within a Thread Pool
+            (boxes0, labels0, scores0, delta_t) = await self.loop.run_in_executor(None, self.run_object_detector, frame)
 
-                # Run object detection engine within a Thread Pool
-                (boxes0, labels0, scores0, delta_t) = await self.loop.run_in_executor(pool, self.run_object_detector, frame)
+            # Filter object detection boxes, including only those with areas of motion
+            t1 = time()
+            boxes = []
+            labels = []
+            scores = []
+            max_x, max_y = self.input_size
+            for ((x,y,w,h), lbl, scr) in zip(boxes0, labels0, scores0):
+                if np.any(np.isnan(boxes0)):
+                    # Drop any rubbish results
+                    continue
+                x, y = int(np.clip(x,0,max_x)), int(np.clip(y,0,max_y))
+                w, h = int(np.clip(w,0,max_x-x)), int(np.clip(h,0,max_y-y))
+                # Check if the box is almost as large as the camera viewport
+                if w * h > 0.9 * max_x * max_y:
+                    # reject as spurious
+                    continue
+                # Check if the box includes sufficient detected motion
+                if not self.background_subtraction or np.count_nonzero(fgMask[y:y+h,x:x+w]) >= self.args.background_subtraction_ratio * w * h:
+                    boxes.append((x,y,w,h))
+                    labels.append(lbl)
+                    scores.append(scr)
+            t2 = time()
 
-                # Filter object detection boxes, including only those with areas of motion
-                t1 = time()
-                boxes = []
-                labels = []
-                scores = []
-                max_x, max_y = self.input_size
-                for ((x,y,w,h), lbl, scr) in zip(boxes0, labels0, scores0):
-                    if np.any(np.isnan(boxes0)):
-                        # Drop any rubbish results
-                        continue
-                    x, y = int(np.clip(x,0,max_x)), int(np.clip(y,0,max_y))
-                    w, h = int(np.clip(w,0,max_x-x)), int(np.clip(h,0,max_y-y))
-                    # Check if the box is almost as large as the camera viewport
-                    if w * h > 0.9 * max_x * max_y:
-                        # reject as spurious
-                        continue
-                    # Check if the box includes sufficient detected motion
-                    if not self.background_subtraction or np.count_nonzero(fgMask[y:y+h,x:x+w]) >= self.args.background_subtraction_ratio * w * h:
-                        boxes.append((x,y,w,h))
-                        labels.append(lbl)
-                        scores.append(scr)
-                t2 = time()
+            # start slowing down the pipeline if there are no objects in scene
+            if not self.args.disable_powersaving and len(boxes) == 0:
+                self.powersave_delay += self.powersave_delay_increment
+                if self.powersave_delay > self.powersave_delay_maximum:
+                    self.powersave_delay = self.powersave_delay_maximum
+            else:
+                self.powersave_delay = 0
 
-                # start slowing down the pipeline if there are no objects in scene
-                if not self.args.disable_powersaving and len(boxes) == 0:
-                    self.powersave_delay += self.powersave_delay_increment
-                    if self.powersave_delay > self.powersave_delay_maximum:
-                        self.powersave_delay = self.powersave_delay_maximum
-                else:
-                    self.powersave_delay = 0
-
-                # Send results to next step in pipeline
-                elements = [FrameInfo(t_frame, self.frame_count),
-                            CameraImage(Image.fromarray(cv2.cvtColor(frame,cv2.COLOR_BGRA2RGB), mode='RGB')),
-                            CameraCountLine(self.cameracountline),
-                            TimingInfo('Frame capture latency', 'fcap', dt_cap),
-                            TimingInfo('Frame return [Q0] latency', 'fram', t_prev - t_frame),
-                            TimingInfo('Frame / Q1 item received latency', 'q1', t_frame_recv - t_prev),
-                            #TimingInfo('Frame prep latency', 'prep', t_prep - t_frame_recv),
-                            TimingInfo('Background subtraction latency', 'bsub', t_backsub - t_frame_recv),
-                            TimingInfo('Object detection latency', 'objd', delta_t+(t2-t1))]
-                await q_out.put((frame, boxes, labels, scores, elements, time()))
+            # Send results to next step in pipeline
+            elements = [FrameInfo(t_frame, self.frame_count),
+                        CameraImage(Image.fromarray(cv2.cvtColor(frame,cv2.COLOR_BGRA2RGB), mode='RGB')),
+                        CameraCountLine(self.cameracountline),
+                        TimingInfo('Frame capture latency', 'fcap', dt_cap),
+                        TimingInfo('Frame return [Q0] latency', 'fram', t_prev - t_frame),
+                        TimingInfo('Frame / Q1 item received latency', 'q1', t_frame_recv - t_prev),
+                        #TimingInfo('Frame prep latency', 'prep', t_prep - t_frame_recv),
+                        TimingInfo('Background subtraction latency', 'bsub', t_backsub - t_frame_recv),
+                        TimingInfo('Object detection latency', 'objd', delta_t+(t2-t1))]
+            await q_out.put((frame, boxes, labels, scores, elements, time()))
 
     async def encode_features(self, q_in, q_out):
         with concurrent.futures.ThreadPoolExecutor() as pool:
