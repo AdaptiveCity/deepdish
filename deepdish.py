@@ -1155,6 +1155,7 @@ async def cancel_and_shutdown(loop, sig=None):
 
 def handle_exception(loop, context):
     msg = context.get("exception", context["message"])
+    print('handle_exception: {}'.format(msg))
     asyncio.ensure_future(cancel_and_shutdown(loop))
 
 @webapp.before_serving
