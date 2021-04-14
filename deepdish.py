@@ -31,6 +31,7 @@ from deep_sort.detection import Detection
 from deep_sort.tracker import Tracker
 from tools import generate_detections as gdet
 from deep_sort.detection import Detection as ddet
+from deepdish.framerecords import FrameRecords
 
 import asyncio
 import uvloop
@@ -356,6 +357,14 @@ class Pipeline:
         # Process comma-separated list of wanted labels
         self.wanted_labels = self.args.wanted_labels.strip().split(',')
 
+        # Open annotations XML file if it exists
+        if self.args.input_cvat_dir is not None:
+            self.annotationfile = os.path.join(self.args.input_cvat_dir, "annotations.xml")
+            try:
+                self.xmltree = ET.parse(self.annotationfile)
+            except FileNotFoundError:
+                self.xmltree = None
+
         self.basedir = self.args.basedir
         model = os.path.join(self.basedir, self.args.model)
         labels = os.path.join(self.basedir, self.args.labels)
@@ -455,6 +464,36 @@ class Pipeline:
             else:
                 raise Error('3-D transform requires focallength, sensor size, camera elevation and tilt.')
 
+        # Initialise frame recording system
+        self.framerec = FrameRecords(self.object_detector.labels)
+
+        # Examine CVAT-format XML file if given
+        if self.xmltree is not None:
+            # Compare labels in XML spec to labels in labelfile
+            full_labels = self.object_detector.labels
+            labels_to_id = {v: k for k, v in full_labels.items()}
+
+            for l in self.xmltree.getroot().findall('./meta/task/labels/label'):
+                name = l.find('name').text
+                id = labels_to_id.get(name, None)
+                color = l.find('color').text
+                # print("Annotation label '{}' mapped to detector label '{}' ID '{}', assigned color '{}'".format(name, full_labels.get(id, None), id, color))
+                # print("To change this try argument: --remap-annotation-labels 'annotation label:detector label,...'")
+                self.framerec.add_annotation_label_info(name, id, color)
+            for t in self.xmltree.getroot().findall('./track'):
+                lblname = t.get('label')
+                track_id = int(t.get('id'))
+                # print("Track {} label='{}'".format(track_id, lblname))
+                for b in t.findall('box'):
+                    frame=int(b.get('frame'))
+                    outside=b.get('outside')=='1'
+                    occluded=b.get('occluded')=='1'
+                    keyframe=b.get('keyframe')=='1'
+                    pts = np.array([b.get('xtl'), b.get('ytl'), b.get('xbr'), b.get('ybr')], dtype=float)
+                    z_order = int(b.get('z_order'))
+                    # print("box frame={} outside={:d} occluded={:d} keyframe={:d} pts={} z_order={}".format(frame,outside,occluded,keyframe,pts,z_order))
+                    self.framerec.add_annotated_track(frame, track_id, lblname, pts, outside, occluded, keyframe, z_order)
+
     async def init_mqtt(self):
         if self.args.mqtt_broker is not None:
             self.mqtt = MQTTClient('deepdish')
@@ -472,12 +511,6 @@ class Pipeline:
             # Open test file
             with Image.open(self.input % 1) as im:
                 self.input_size = im.size
-            # Open XML file if it exists
-            self.annotationfile = os.path.join(self.args.input_cvat_dir, "annotations.xml")
-            try:
-                self.xmltree = ET.parse(self.annotationfile)
-            except FileNotFoundError:
-                self.xmltree = None
             # Capture every frame from the video file / dir
             self.everyframe = threading.Event()
             # Disable power-saving delay mechanism
@@ -702,12 +735,18 @@ class Pipeline:
                 scoresA1 = scoresA0[indices]
                 labels1 = [labels[i] for i in indices]
 
+                # Consider and modify boxes based on info contained in the frame record
+                boxesA2, labels2, scoresA2 = self.framerec.process_boxes(self.frame_count, boxesA1, labels1, scoresA1)
+
                 # Run feature encoder within a Thread Pool
-                features = await self.loop.run_in_executor(pool, self.encoder, frame, boxesA1)
+                features = await self.loop.run_in_executor(pool, self.encoder, frame, boxesA2)
                 t2 = time()
 
                 # Build list of 'Detection' objects and send them to next step in pipeline
-                detections = [Detection(bbox, lbl, scr, feature) for bbox, lbl, scr, feature in zip(boxesA1, labels1, scoresA1, features)]
+                detections = [Detection(bbox, lbl, scr, feature) for bbox, lbl, scr, feature in zip(boxesA2, labels2, scoresA2, features)]
+
+                # Consider and modify detections based on info contained in the frame record
+                detections = self.framerec.process_detections(self.frame_count, detections)
                 elements.append(TimingInfo('Q1 / Q2 latency', 'q2', (t1 - t_prev)))
                 elements.append(TimingInfo('Feature encoder latency', 'feat', (t2-t1)))
                 await q_out.put((detections, elements, time()))
@@ -733,11 +772,16 @@ class Pipeline:
                 if track.is_deleted():
                     self.check_deleted_track(track)
 
+            # Consider and modify tracks based on info in frame record
+            self.tracker.tracks = self.framerec.process_tracking(self.frame_count, self.tracker)
+
             for track in self.tracker.tracks:
                 i = track.track_id
                 lbl = track.get_label()
                 if not track.is_confirmed() or track.time_since_update > 1:
+                    # track was not updated this frame, or it was not confirmed
                     continue
+
                 if i not in self.db:
                     self.db[i] = []
 

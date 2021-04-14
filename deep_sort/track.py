@@ -77,6 +77,7 @@ class Track:
         self.labels = [detection.label]
         self.dist = {}
         self.dist[detection.label] = [detection.confidence]
+        self.detections = [detection]
         self._n_init = n_init
         self._max_age = max_age
 
@@ -148,6 +149,7 @@ class Track:
         if detection.label not in self.dist:
             self.dist[detection.label] = []
         self.dist[detection.label].append(detection.confidence)
+        self.detections.append(detection)
 
     def get_label(self):
         # the label of a track is designated as the most commonly
