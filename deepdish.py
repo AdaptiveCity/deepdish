@@ -358,6 +358,7 @@ class Pipeline:
         self.wanted_labels = self.args.wanted_labels.strip().split(',')
 
         # Open annotations XML file if it exists
+        self.xmltree = None
         if self.args.input_cvat_dir is not None:
             self.annotationfile = os.path.join(self.args.input_cvat_dir, "annotations.xml")
             try:
