@@ -594,10 +594,10 @@ class Pipeline:
 
     def shutdown(self):
         self.running = False
-        # Write CVAT-format annotations XML file if possible
-        meta = self.xmltree.getroot().find('./meta')
-        xmlout = self.framerec.xml_output(meta=meta)
         if self.args.output_cvat_dir is not None and self.xmltree is not None:
+            # Write CVAT-format annotations XML file if possible
+            meta = self.xmltree.getroot().find('./meta')
+            xmlout = self.framerec.xml_output(meta=meta)
             xmloutfile = os.path.join(self.args.output_cvat_dir, "annotations.xml")
             with open(xmloutfile, mode='wb') as f:
                 xmlout.write(f, xml_declaration=True, encoding='utf-8', short_empty_elements=False)
