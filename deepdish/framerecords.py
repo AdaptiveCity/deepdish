@@ -19,7 +19,7 @@ class AnnotationRecord(FrameRecord):
         self.is_occluded = occluded
         self.is_keyframe = keyframe
         self.z_order = z_order
-        self.tentative_matches = {}
+        self.tentative_matches: Dict[int, TentativeRecord] = {}
         self.score = 1.0
         super().__init__(tlbr, det_lbl_id, order=order)
 
@@ -79,14 +79,14 @@ class FrameRecords:
             if isinstance(rec, AnnotationRecord):
                 # Compare annotation record against tentatives
                 overlap_found = False
-                for ti, tentative in enumerate(tentatives):
+                for ti, tentative in enumerate(tentative_without_annotation):
                     if overlap(rec, tentative) >= self.overlap_threshold:
                         if rec.label_id == tentative.label_id or rec.label_id is None:
                             # It is likely that the tentative detection is the same as the recorded annotation
                             # If rec.label_id is None then the annotation label may be different than the detector label
                             rec.tentative_matches[frame] = copy(tentative)
                             annotation_overlaps_tentative.append(rec)
-                            debug('annotation_overlaps_tentative tlbr={} lbl={} overlap={}'.format(rec.tlbr, rec.label_id, overlap(rec, tentative)))
+                            debug('annotation_overlaps_tentative ti={} tlbr={} lbl={} overlap={}'.format(ti, rec.tlbr, rec.label_id, overlap(rec, tentative)))
                             overlap_found = True
                             del tentative_without_annotation[ti]
                             break
