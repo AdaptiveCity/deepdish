@@ -156,6 +156,8 @@ class FrameRecords:
             for d in t.detections:
                 if hasattr(d, 'record') and isinstance(d.record, AnnotationRecord):
                     debug('{}'.format(d.record.annotation_track_id), end=',')
+                if hasattr(d, 'record'):
+                    d.record.track = t
 
             debug()
 
