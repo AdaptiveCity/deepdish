@@ -1,6 +1,10 @@
+from typing import Dict
+import sys
+import os
 import numpy as np
 from copy import copy
 import deep_sort.track
+import xml.etree.ElementTree as ET
 
 def debug(*s,**kw):
     pass # print(*s,**kw)
@@ -37,13 +41,14 @@ def overlap(a: FrameRecord, b: FrameRecord):
     return actual / most_possible
 
 class FrameRecords:
-    def __init__(self, detector_id_to_labelname, overlap_threshold=0.9, override_tentative_detections=True):
+    def __init__(self, detector_id_to_labelname, overlap_threshold=0.9, override_tentative_detections=True, minimum_track_frames=3):
         self.frames = {}
         self.labels = {}
         self.detector_id_to_labelname = detector_id_to_labelname
         self.detector_labelname_to_id = {v: k for k, v in detector_id_to_labelname.items()}
         self.overlap_threshold = overlap_threshold
         self.override_tentative_detections = override_tentative_detections
+        self.minimum_track_frames = minimum_track_frames
 
     def add_annotation_label_info(self, annotlabelname, detectorlabelid, annotlabelcolor):
         self.labels[annotlabelname] = {'detector_id': detectorlabelid, 'color': annotlabelcolor}
@@ -177,3 +182,125 @@ class FrameRecords:
         debug('tracks_to_delete = {}'.format(tracks_to_delete))
         tracks_out = [t for t in tracks if t.track_id not in tracks_to_delete]
         return tracks_out
+
+    def xml_output(self, meta=None):
+        annotations = ET.Element('annotations')
+        version = ET.SubElement(annotations, 'version')
+        version.text = '1.1'
+        if meta is not None:
+            annotations.append(meta)
+        annot_track_db = {}
+        new_track_db = {}
+        for frame, recs in self.frames.items():
+            for rec in recs:
+                if hasattr(rec, 'annotation_track_id'):
+                    i = rec.annotation_track_id
+                    if i not in annot_track_db: annot_track_db[i] = {}
+                    annot_track_db[i][frame] = rec
+                elif hasattr(rec, 'track'):
+                    i = rec.track.track_id
+                    if i not in new_track_db: new_track_db[i] = {}
+                    new_track_db[i][frame] = rec
+
+        # first create elements for known existing annotated tracks
+        max_annot_track_id = 0
+        for i, framedb in sorted(annot_track_db.items()):
+            if i > max_annot_track_id: max_annot_track_id = i
+            track = ET.SubElement(annotations, 'track', attrib={'id': str(i), 'source': 'manual'})
+            for frame, rec in sorted(framedb.items()):
+                #     <box frame="6" outside="0" occluded="1" keyframe="1" xtl="1724.28" ytl="996.09" xbr="1855.16" ybr="1080.00" z_order="0">
+                ET.SubElement(track, 'box', attrib={'frame': str(frame),
+                                                    'occluded': '1' if rec.is_occluded else '0',
+                                                    'outside': '1' if rec.is_outside else '0',
+                                                    'keyframe': '1' if rec.is_keyframe else '0',
+                                                    'z_order': str(rec.z_order),
+                                                    'xtl': str(rec.tlbr[0]),
+                                                    'ytl': str(rec.tlbr[1]),
+                                                    'xbr': str(rec.tlbr[2]),
+                                                    'ybr': str(rec.tlbr[3])})
+                label = self.detector_id_to_labelname[rec.label_id] # should be the same for every rec
+            track.set('label', label)
+
+        # append elements for new tracks
+        max_annot_track_id += 1
+        for _, framedb in sorted(new_track_db.items()):
+            if len(framedb) >= self.minimum_track_frames:
+                # use new track id labels greater than existing track id labels
+                i = max_annot_track_id
+                max_annot_track_id += 1
+                track = ET.SubElement(annotations, 'track', attrib={'id': str(i), 'source': 'automatic'})
+                # figure out the label of this track by max occurrence
+                label_ids = {}
+                for frame, rec in sorted(framedb.items()):
+                    #     <box frame="6" outside="0" occluded="1" keyframe="1" xtl="1724.28" ytl="996.09" xbr="1855.16" ybr="1080.00" z_order="0">
+                    if rec.label_id not in label_ids: label_ids[rec.label_id] = 0
+                    label_ids[rec.label_id] += 1
+                    box = ET.SubElement(track, 'box', attrib={'frame': str(frame),
+                                                              'occluded': '0',
+                                                              'outside': '0',
+                                                              'keyframe': '1',
+                                                              'z_order': '0',
+                                                              'xtl': str(rec.tlbr[0]),
+                                                              'ytl': str(rec.tlbr[1]),
+                                                              'xbr': str(rec.tlbr[2]),
+                                                              'ybr': str(rec.tlbr[3])})
+                box.set('outside', '1') # set last entry to 'outside=1'
+                # label with most occurrences is 'the label'
+                label = self.detector_id_to_labelname[max(label_ids, key=label_ids.get)]
+                track.set('label', label)
+        tree = ET.ElementTree(annotations)
+        self.indent(tree)
+        # with os.fdopen(sys.stdout.fileno(), "wb", closefd=False) as stdout:
+        #     # Output tree to stdout
+        #     tree.write(stdout, xml_declaration=True, encoding='utf-8', short_empty_elements=False)
+        #     stdout.flush()
+        return tree
+
+
+
+    # from python 3.9
+    def indent(self, tree, space="  ", level=0):
+        """Indent an XML document by inserting newlines and indentation space
+        after elements.
+        *tree* is the ElementTree or Element to modify.  The (root) element
+        itself will not be changed, but the tail text of all elements in its
+        subtree will be adapted.
+        *space* is the whitespace to insert for each indentation level, two
+        space characters by default.
+        *level* is the initial indentation level. Setting this to a higher
+        value than 0 can be used for indenting subtrees that are more deeply
+        nested inside of a document.
+        """
+        if isinstance(tree, ET.ElementTree):
+            tree = tree.getroot()
+        if level < 0:
+            raise ValueError(f"Initial indentation level must be >= 0, got {level}")
+        if not len(tree):
+            return
+
+        # Reduce the memory consumption by reusing indentation strings.
+        indentations = ["\n" + level * space]
+
+        def _indent_children(elem, level):
+            # Start a new indentation level for the first child.
+            child_level = level + 1
+            try:
+                child_indentation = indentations[child_level]
+            except IndexError:
+                child_indentation = indentations[level] + space
+                indentations.append(child_indentation)
+
+            if not elem.text or not elem.text.strip():
+                elem.text = child_indentation
+
+            for child in elem:
+                if len(child):
+                    _indent_children(child, child_level)
+                if not child.tail or not child.tail.strip():
+                    child.tail = child_indentation
+
+            # Dedent after the last child by overwriting the previous indentation.
+            if not child.tail.strip():
+                child.tail = indentations[level]
+
+        _indent_children(tree, 0)
