@@ -12,6 +12,7 @@ import warnings
 import sys
 import argparse
 import signal
+import traceback
 from collections import deque
 
 import numpy as np
@@ -1155,8 +1156,12 @@ async def cancel_and_shutdown(loop, sig=None):
     await asyncio.gather(*ps, return_exceptions=True)
 
 def handle_exception(loop, context):
-    msg = context.get("exception", context["message"])
+    msg = context.get("message", "no message")
+    exc = context.get("exception", None)
     print('handle_exception: {}'.format(msg))
+    if exc is not None:
+        for s in traceback.format_exception(etype=type(exc), value=exc, tb=exc.__traceback__):
+            print(s)
     asyncio.ensure_future(cancel_and_shutdown(loop))
 
 @webapp.before_serving
