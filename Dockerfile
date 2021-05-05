@@ -1,4 +1,4 @@
-FROM tensorflow/tensorflow:1.15.2-gpu-py3
+FROM tensorflow/tensorflow:2.4.1-gpu
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update -y && apt-get upgrade -y
@@ -10,10 +10,17 @@ RUN apt-get install -y --allow-downgrades \
             python3-opencv \
             fonts-freefont-ttf \
             vim less wget \
-            libcudnn7=7.6.5.32-1+cuda10.0 # force install of cuda10.0 compatible package
+            libcudnn8-dev
+# These were only installed to pull in non-Python dependencies:
+RUN apt-get remove -y \
+            python3-matplotlib \
+            python3-numpy \
+            python3-sklearn \
+            python3-opencv
+
 RUN pip3 install --upgrade pip
-RUN pip3 install keras==2.3.1 quart gmqtt cameratransform scipy==1.1.0 uvloop
-RUN pip3 install https://dl.google.com/coral/python/tflite_runtime-2.1.0.post1-cp36-cp36m-linux_x86_64.whl
+RUN pip3 install -U keras quart gmqtt cameratransform scipy uvloop==0.14.0 matplotlib opencv-python scikit-learn numpy
+RUN pip3 install -U https://github.com/google-coral/pycoral/releases/download/v1.0.1/tflite_runtime-2.5.0-cp36-cp36m-linux_x86_64.whl
 
 USER root
 RUN mkdir -p /deepdish/detectors/yolo

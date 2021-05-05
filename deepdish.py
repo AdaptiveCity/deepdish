@@ -21,8 +21,12 @@ from PIL import Image
 from PIL import ImageDraw
 from PIL import ImageFont
 
-from tools.ssd_mobilenet import SSD_MOBILENET
+try:
+    from tools.ssd_mobilenet import SSD_MOBILENET
+except:
+    pass
 from tools.yolo import YOLO
+from tools.yolov5 import YOLOV5
 from tools.intersection import any_intersection, intersection
 import cameratransform as ct
 
@@ -373,7 +377,9 @@ class Pipeline:
         # Initialise object detector (for some reason it has to happen
         # here & not within detect_objects(), or else the inference engine
         # gets upset and starts throwing NaNs at me. Thanks, Python.)
-        if 'yolo' in self.args.model:
+        if 'yolov5' in self.args.model:
+            self.object_detector = YOLOV5(wanted_labels=self.wanted_labels, model_file=model, label_file=labels, num_threads=self.args.num_threads)
+        elif 'yolo' in self.args.model:
             self.object_detector = YOLO(wanted_labels=self.wanted_labels, model_file=model, label_file=labels, num_threads=self.args.num_threads)
         elif self.args.edgetpu:
             from tools.edgetpu import EDGETPU
