@@ -27,6 +27,7 @@ except:
     pass
 from tools.yolo import YOLO
 from tools.yolov5 import YOLOV5
+from tools.saved_model import SAVED_MODEL
 from tools.intersection import any_intersection, intersection
 import cameratransform as ct
 
@@ -381,6 +382,8 @@ class Pipeline:
             self.object_detector = YOLOV5(wanted_labels=self.wanted_labels, model_file=model, label_file=labels, num_threads=self.args.num_threads)
         elif 'yolo' in self.args.model:
             self.object_detector = YOLO(wanted_labels=self.wanted_labels, model_file=model, label_file=labels, num_threads=self.args.num_threads)
+        elif 'saved_model' in self.args.model:
+            self.object_detector = SAVED_MODEL(wanted_labels=self.wanted_labels, model_file=model, label_file=labels, num_threads=self.args.num_threads)
         elif self.args.edgetpu:
             from tools.edgetpu import EDGETPU
             self.object_detector = EDGETPU(wanted_labels=self.wanted_labels, model_file=model, label_file=labels,
