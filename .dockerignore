@@ -1,0 +1,10 @@
+*
+!*.py
+!detectors/
+!encoders/
+!yolo3/*.py
+!tools/*.py
+!deep_sort/*.py
+!deepdish/*.py
+!*-demo.sh
+!bicycle_test1.mp4
