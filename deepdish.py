@@ -273,6 +273,7 @@ class CameraImage:
     def __init__(self, image):
         self.image = image
         self.priority = 1
+        self.raw = True
 
     def do_render(self, render):
         render.buffer.paste(self.image)
@@ -916,7 +917,7 @@ class Pipeline:
 
         # Draw elements
         for e in elements:
-            if hasattr(e, 'do_render'):
+            if hasattr(e, 'do_render') and (not self.args.raw_output or getattr(e, 'raw', False)):
                 e.do_render(render)
 
         # Copy backbuf to output
@@ -1133,6 +1134,7 @@ def get_arguments():
     parser.add_argument('--roll-deg', help='Camera roll (horizontal is 0 degrees)', default=0.0, metavar='DEG',type=float)
     parser.add_argument('--topdownview-size-m', help='X,Y in metres describing top-down view of area covered by camera.', default=None, metavar='X,Y')
     parser.add_argument('--3d', help='Toggle 3-D perspective unprojection transformation', default=False, action='store_true',dest='three_d')
+    parser.add_argument('--raw-output', help='Only output raw video frames without any further drawing on them.', default=False, action='store_true')
     args = parser.parse_args()
 
     if args.deepsorthome is None:
