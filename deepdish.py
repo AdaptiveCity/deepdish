@@ -614,7 +614,7 @@ class Pipeline:
             xmloutfile = os.path.join(self.args.output_cvat_dir, "annotations.xml")
             with open(xmloutfile, mode='wb') as f:
                 xmlout.write(f, xml_declaration=True, encoding='utf-8', short_empty_elements=False)
-        for p in asyncio.Task.all_tasks():
+        for p in asyncio.all_tasks():
             p.cancel()
 
     async def get_cpu_temp(self):
