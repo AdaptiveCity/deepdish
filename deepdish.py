@@ -25,6 +25,10 @@ try:
     from tools.ssd_mobilenet import SSD_MOBILENET
 except:
     pass
+try:
+    from tools.tflite import TFLITE
+except:
+    pass
 from tools.yolo import YOLO
 from tools.yolov5 import YOLOV5
 from tools.saved_model import SAVED_MODEL
@@ -375,7 +379,10 @@ class Pipeline:
 
         self.basedir = self.args.basedir
         model = os.path.join(self.basedir, self.args.model)
-        labels = os.path.join(self.basedir, self.args.labels)
+        if self.args.labels:
+            labels = os.path.join(self.basedir, self.args.labels)
+        else:
+            labels = None
         # Initialise object detector (for some reason it has to happen
         # here & not within detect_objects(), or else the inference engine
         # gets upset and starts throwing NaNs at me. Thanks, Python.)
@@ -385,13 +392,19 @@ class Pipeline:
             self.object_detector = YOLO(wanted_labels=self.wanted_labels, model_file=model, label_file=labels, num_threads=self.args.num_threads)
         elif 'saved_model' in self.args.model:
             self.object_detector = SAVED_MODEL(wanted_labels=self.wanted_labels, model_file=model, label_file=labels, num_threads=self.args.num_threads)
+        elif 'mobilenet' in self.args.model:
+            self.object_detector = SSD_MOBILENET(wanted_labels=self.wanted_labels, model_file=model, label_file=labels,
+                    num_threads=self.args.num_threads, edgetpu=self.args.edgetpu)
+        elif 'tflite' in self.args.model:
+            self.object_detector = TFLITE(wanted_labels=self.wanted_labels, model_file=model, label_file=labels,
+                    num_threads=self.args.num_threads, edgetpu=self.args.edgetpu)
         elif self.args.edgetpu:
             from tools.edgetpu import EDGETPU
             self.object_detector = EDGETPU(wanted_labels=self.wanted_labels, model_file=model, label_file=labels,
                     num_threads=self.args.num_threads, edgetpu=self.args.edgetpu)
         else:
-            self.object_detector = SSD_MOBILENET(wanted_labels=self.wanted_labels, model_file=model, label_file=labels,
-                    num_threads=self.args.num_threads, edgetpu=self.args.edgetpu)
+            print('Unsure what to do with model file {}'.format(self.args.model))
+            sys.exit(1)
 
         # Initialise feature encoder
         if self.args.encoder_model is None:
@@ -1055,7 +1068,7 @@ def get_arguments():
                         required=False)
     parser.add_argument('--encoder-batch-size', help='Batch size for feature encoder inference',
                         default=32, type=int, metavar='N')
-    parser.add_argument('--labels', help='File path of labels file.', required=True)
+    parser.add_argument('--labels', help='File path of labels file.', metavar='FILE', default=None, required=False)
     parser.add_argument('--framebuffer', help='Enable framebuffer display',
                         required=False, action='store_true')
     parser.add_argument('--framebuffer-device', '-F', help='Framebuffer device',
