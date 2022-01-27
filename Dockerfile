@@ -1,26 +1,28 @@
-FROM tensorflow/tensorflow:2.4.1-gpu
+FROM tensorflow/tensorflow:2.7.0-gpu
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update -y && apt-get upgrade -y
 RUN apt-get install -y --allow-downgrades \
-            git \
-            python3-matplotlib \
-            python3-numpy \
-            python3-sklearn \
-            python3-opencv \
-            fonts-freefont-ttf \
-            vim less wget \
-            libcudnn8-dev
+	    git \
+	    python3-matplotlib \
+	    python3-numpy \
+	    python3-sklearn \
+	    python3-opencv \
+	    fonts-freefont-ttf \
+	    vim less wget \
+	    libcudnn8-dev \
+	    mesa-common-dev libgl1-mesa-dev libgles2-mesa-dev ocl-icd-opencl-dev libegl1-mesa-dev libgles2-mesa-dev
+
 # These were only installed to pull in non-Python dependencies:
 RUN apt-get remove -y \
-            python3-matplotlib \
-            python3-numpy \
-            python3-sklearn \
-            python3-opencv
+	    python3-matplotlib \
+	    python3-numpy \
+	    python3-sklearn \
+	    python3-opencv
 
 RUN pip3 install --upgrade pip
-RUN pip3 install -U keras quart gmqtt cameratransform scipy uvloop==0.14.0 matplotlib opencv-python scikit-learn numpy
-RUN pip3 install -U https://github.com/google-coral/pycoral/releases/download/v1.0.1/tflite_runtime-2.5.0-cp36-cp36m-linux_x86_64.whl
+RUN pip3 install -U https://github.com/google-coral/pycoral/releases/download/v2.0.0/tflite_runtime-2.5.0.post1-cp38-cp38-linux_x86_64.whl
+RUN pip3 install -U keras quart gmqtt cameratransform scipy uvloop==0.14.0 matplotlib opencv-python scikit-learn numpy tflite_support datumaro
 
 USER root
 RUN mkdir -p /deepdish/detectors/yolo
@@ -47,6 +49,7 @@ RUN chmod +x /usr/bin/deepdish /usr/bin/simple
 COPY *.py /deepdish/
 COPY detectors/mobilenet/* /deepdish/detectors/mobilenet/
 COPY detectors/yolo/* /deepdish/detectors/yolo/
+COPY detectors/efficientdet_lite0/* /deepdish/detectors/efficientdet_lite0/
 COPY encoders/* /deepdish/encoders/
 COPY yolo3/*.py /deepdish/yolo3/
 COPY tools/*.py /deepdish/tools/
