@@ -651,7 +651,8 @@ class Pipeline:
                 msg = None
                 while msg is None:
                     msg = box.get_message()
-                    await asyncio.sleep(0) # cooperative yield
+                    await asyncio.sleep(0.003) # cooperative yield
+                    # note that .sleep(0) doesn't work right, causing severely inconsistent timings
                 (frame, t_frame, dt_cap) = msg
 
                 if self.everyframe: box.set_message(None) # avoid repeating frames
