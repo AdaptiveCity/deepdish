@@ -1,0 +1,97 @@
+FROM balenalib/raspberrypi3-debian-python:3.7.9-build
+
+RUN [ "cross-build-start" ]
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN echo "deb https://packages.cloud.google.com/apt coral-edgetpu-stable main" > /etc/apt/sources.list.d/coral-edgetpu.list
+RUN echo "deb https://packages.cloud.google.com/apt coral-cloud-stable main" > /etc/apt/sources.list.d/coral-cloud.list
+RUN curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
+
+RUN apt-get update -y && apt-get upgrade -y
+RUN apt-get install -y --allow-downgrades \
+	    git vim less wget \
+	    # for font usage in deepdish:
+	    fonts-freefont-ttf libfreetype6-dev \
+	    # GMQTT deps:
+	    libmosquitto-dev \
+	    # numpy deps:
+	    libatlas-base-dev libgfortran5 \
+	    # libjpeg-dev \
+	    # zlib1g-dev \
+	    # libpng-dev \
+	    # EdgeTPU deps:
+	    libedgetpu-dev libedgetpu1-std \
+	    # OpenCV deps:
+	    libaom0 libatlas3-base libavcodec58 libavformat58 libavutil56 \
+	    libbluray2 libcairo2 libchromaprint1 libcodec2-0.8.1 libcroco3 \
+	    libdatrie1 libdrm2 libfontconfig1 libgdk-pixbuf2.0-0 libgfortran5 \
+	    libgme0 libgraphite2-3 libgsm1 libharfbuzz0b libjbig0 libmp3lame0 \
+	    libmpg123-0 libogg0 libopenjp2-7 libopenmpt0 libopus0 libpango-1.0-0 \
+	    libpangocairo-1.0-0 libpangoft2-1.0-0 libpixman-1-0 librsvg2-2 \
+	    libshine3 libsnappy1v5 libsoxr0 libspeex1 libssh-gcrypt-4 \
+	    libswresample3 libswscale5 libthai0 libtheora0 libtiff5 libtwolame0 \
+	    libva-drm2 libva-x11-2 libva2 libvdpau1 libvorbis0a libvorbisenc2 \
+	    libvorbisfile3 libvpx5 libwavpack1 libwebp6 libwebpmux3 libx264-155 \
+	    libx265-165 libxcb-render0 libxcb-shm0 libxfixes3 libxrender1 \
+	    libxvidcore4 libzvbi0
+
+RUN pip3 install --upgrade pip wheel setuptools
+
+# Hold numpy at 1.19.2 while installing tflite-runtime for dependency purposes
+RUN pip3 install --extra-index-url https://www.piwheels.org/simple --only-binary=:all: -U opencv-python-headless==4.5.1.48 numpy==1.19.2 keras==2.3.1 pandas==1.1.5 matplotlib cycler uvloop==0.14.0 quart gmqtt cameratransform pillow pytz python-dateutil tflite_support
+
+# TFLite-runtime 2.7.0 for ARMv7
+WORKDIR /tmp
+RUN wget https://raw.githubusercontent.com/PINTO0309/TensorflowLite-bin/main/2.7.0/download_tflite_runtime-2.7.0-cp37-none-linux_armv7l.whl.sh
+RUN bash download_tflite_runtime-2.7.0-cp37-none-linux_armv7l.whl.sh
+RUN pip3 install --only-binary=:all: tflite_runtime-2.7.0-cp37-none-linux_armv7l.whl
+
+# Seems to work OK to install newer numpy after tflite-runtime is safely installed
+RUN pip3 install --extra-index-url https://www.piwheels.org/simple --only-binary=:all: -U numpy
+
+USER root
+
+RUN mkdir -p /deepdish/detectors/yolo
+RUN wget -O /deepdish/detectors/yolo/yolo.h5 https://github.com/OlafenwaMoses/ImageAI/releases/download/1.0/yolo.h5
+
+# Create 'user' for running things
+ARG USER_ID
+ARG GROUP_ID
+
+RUN addgroup --gid $GROUP_ID user
+RUN adduser --disabled-password --gecos '' --uid $USER_ID --gid 0 user
+RUN adduser user plugdev
+
+RUN mkdir -p /work
+RUN chown -R user:user /work # /yolo
+
+# Allow password-less 'root' login with 'su'
+RUN passwd -d root
+RUN sed -i 's/nullok_secure/nullok/' /etc/pam.d/common-auth
+
+RUN echo '#!/bin/bash\nPYTHONPATH=/deepdish:$PYTHONPATH DEEPDISHHOME=/deepdish python3 /deepdish/deepdish.py $@' > /usr/bin/deepdish.sh
+COPY yolov5-demo.sh /usr/bin
+COPY tflite-demo.sh /usr/bin
+
+RUN (cd /usr/bin; chmod +x deepdish.sh yolov5-demo.sh tflite-demo.sh)
+
+COPY *.py /deepdish/
+COPY detectors/mobilenet/* /deepdish/detectors/mobilenet/
+COPY detectors/yolo/* /deepdish/detectors/yolo/
+COPY detectors/efficientdet_lite0/* /deepdish/detectors/efficientdet_lite0/
+COPY detectors/yolov5/* /deepdish/detectors/yolov5/
+COPY encoders/* /deepdish/encoders/
+COPY yolo3/*.py /deepdish/yolo3/
+COPY tools/*.py /deepdish/tools/
+COPY deep_sort/*.py /deepdish/deep_sort/
+COPY deepdish/*.py /deepdish/deepdish/
+COPY bicycle_test1.mp4 /deepdish
+
+RUN [ "cross-build-end" ]
+
+USER user
+
+WORKDIR /work
+
+CMD /bin/bash
