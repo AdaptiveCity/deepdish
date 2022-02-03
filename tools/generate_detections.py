@@ -4,20 +4,21 @@ import errno
 import argparse
 import numpy as np
 import cv2
-import tensorflow as tf
 import cv2
 # pylint: disable=g-import-not-at-top
+# Be capable of running partial functionality even without all dependencies installed
 try:
-  # Import TFLite interpreter from tflite_runtime package if it's available.
-  from tflite_runtime.interpreter import Interpreter
-  from tflite_runtime.interpreter import load_delegate
+    import tensorflow as tf
+except:
+    pass
+try:
+    # Import TFLite interpreter from tflite_runtime package if it's available.
+    from tflite_runtime.interpreter import Interpreter
+    from tflite_runtime.interpreter import load_delegate
 except ImportError:
-  # If not, fallback to use the TFLite interpreter from the full TF package.
-  import tensorflow as tf
-
-  Interpreter = tf.lite.Interpreter
-  load_delegate = tf.lite.experimental.load_delegate
-
+    # If not, fallback to use the TFLite interpreter from the full TF package.
+    Interpreter = tf.lite.Interpreter
+    load_delegate = tf.lite.experimental.load_delegate
 # pylint: enable=g-import-not-at-top
 
 
@@ -112,6 +113,7 @@ class ImageEncoder(object):
         _run_in_batches(self.concrete_func, tf.identity(data_in), out, batch_size)
         return out
 
+# Run the image encoder using TFLite only
 class TFLiteImageEncoder(object):
     def __init__(self, tflite_filename, input_name=None, output_name=None, num_threads=1):
         self.interpreter = Interpreter(model_path=tflite_filename, num_threads=num_threads)
@@ -123,21 +125,19 @@ class TFLiteImageEncoder(object):
         self.image_shape = self.input_detail['shape'][1:]
         self.feature_dim = 128
         self.max_batch_size = 1
-        #import pdb; pdb.set_trace()
 
     def __call__(self, data_in, batch_size=1):
         out = np.zeros((len(data_in), self.feature_dim), np.float32)
 
         def _internal_fn(patches):
             patches2 = np.array(patches).astype(np.float32)
-            #import pdb; pdb.set_trace()
             self.interpreter.set_tensor(self.input_tensor_index, patches2)
             self.interpreter.invoke()
             return self.interpreter.get_tensor(self.output_tensor_index)
 
         if batch_size > self.max_batch_size: batch_size = self.max_batch_size
 
-        _run_in_batches(_internal_fn, tf.identity(data_in), out, batch_size)
+        _run_in_batches(_internal_fn, data_in, out, batch_size)
         return out
 
 

@@ -1,22 +1,40 @@
 import time
 import os
+import platform
 from PIL import Image
 from PIL import ImageDraw
 from PIL import ImageFont
 from PIL import ImageColor
 import numpy as np
-import tflite_runtime.interpreter as tflite
-import tensorflow as tf
+# pylint: disable=g-import-not-at-top
+try:
+  # Import TFLite interpreter from tflite_runtime package if it's available.
+  from tflite_runtime.interpreter import Interpreter
+  from tflite_runtime.interpreter import load_delegate
+except ImportError:
+  # If not, fallback to use the TFLite interpreter from the full TF package.
+  import tensorflow as tf
+
+  Interpreter = tf.lite.Interpreter
+  load_delegate = tf.lite.experimental.load_delegate
+# pylint: enable=g-import-not-at-top
+
+def edgetpu_lib_name():
+  """Returns the library name of EdgeTPU in the current platform."""
+  return {
+      'Darwin': 'libedgetpu.1.dylib',
+      'Linux': 'libedgetpu.so.1',
+      'Windows': 'edgetpu.dll',
+  }.get(platform.system(), None)
 
 class SSDMobileNet:
   def __init__(self,model_path,label_path,num_threads=None,edgetpu=False,libedgetpu=None,score_threshold=0.5):
     if edgetpu:
-      if libedgetpu is None:
-        libedgetpu = 'libedgetpu.so.1'
-      delegate = tflite.load_delegate(libedgetpu)
-      self.interpreter = tflite.Interpreter(model_path, experimental_delegates=[delegate])
+      if libedgetpu is None: libedgetpu = edgetpu_lib_name()
+      delegate = load_delegate(libedgetpu)
+      self.interpreter = Interpreter(model_path, experimental_delegates=[delegate])
     else:
-      self.interpreter = tf.lite.Interpreter(model_path)
+      self.interpreter = Interpreter(model_path)
     if num_threads is not None and hasattr(self.interpreter, 'set_num_threads'):
         self.interpreter.set_num_threads(num_threads)
     self.interpreter.allocate_tensors()
@@ -194,4 +212,3 @@ class SSD_MOBILENET():
 
 if __name__ == "__main__":
   test()
-

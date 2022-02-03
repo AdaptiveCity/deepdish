@@ -20,7 +20,8 @@ import cv2
 from PIL import Image
 from PIL import ImageDraw
 from PIL import ImageFont
-
+# pylint: disable=g-import-not-at-top
+# Be capable of running partial functionality even without all dependencies installed
 try:
     from tools.ssd_mobilenet import SSD_MOBILENET
 except:
@@ -29,9 +30,20 @@ try:
     from tools.tflite import TFLITE
 except:
     pass
-from tools.yolo import YOLO
-from tools.yolov5 import YOLOV5
-from tools.saved_model import SAVED_MODEL
+try:
+    from tools.yolo import YOLO
+except:
+    pass
+try:
+    from tools.yolov5 import YOLOV5
+except:
+    pass
+try:
+    from tools.saved_model import SAVED_MODEL
+except:
+    pass
+# pylint: enable=g-import-not-at-top
+
 from tools.intersection import any_intersection, intersection
 import cameratransform as ct
 
