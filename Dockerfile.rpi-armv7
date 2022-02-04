@@ -1,4 +1,4 @@
-FROM mrdanish/tensorflow-rpi:2.4.0-armv7
+FROM balenalib/raspberrypi3-debian-python:3.7.9-build
 
 RUN [ "cross-build-start" ]
 
@@ -10,7 +10,7 @@ RUN curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
 
 RUN apt-get update -y && apt-get upgrade -y
 RUN apt-get install -y --allow-downgrades \
-            git \
+            git vim less wget \
             python3-matplotlib python3-numpy python3-sklearn python3-opencv python3-h5py python3-pandas python3-scipy python3-uvloop \
             libmosquitto-dev \
             fonts-freefont-ttf \
@@ -19,13 +19,32 @@ RUN apt-get install -y --allow-downgrades \
             libjpeg-dev \
             zlib1g-dev \
             libpng-dev \
-            libedgetpu-dev libedgetpu1-std \
-            vim less wget
-RUN pip3 install --upgrade pip wheel setuptools
-RUN pip3 install --index-url https://www.piwheels.org/simple -U -i https://www.piwheels.org/simple opencv-python keras pandas==1.1.5 matplotlib cycler uvloop==0.14.0 numpy quart gmqtt cameratransform pillow pytz python-dateutil
-RUN pip3 install https://github.com/google-coral/pycoral/releases/download/release-frogfish/tflite_runtime-2.5.0-cp37-cp37m-linux_armv7l.whl \
-                 https://github.com/google-coral/pycoral/releases/download/v1.0.1/pycoral-1.0.1-cp37-cp37m-linux_armv7l.whl
+            libedgetpu-dev libedgetpu1-std
 
+# OpenCV deps
+RUN apt-get install -y libaom0 libatlas3-base libavcodec58 libavformat58 libavutil56 libbluray2 libcairo2 libchromaprint1 libcodec2-0.8.1 libcroco3 libdatrie1 libdrm2 libfontconfig1 libgdk-pixbuf2.0-0 libgfortran5 libgme0 libgraphite2-3 libgsm1 libharfbuzz0b libjbig0 libmp3lame0 libmpg123-0 libogg0 libopenjp2-7 libopenmpt0 libopus0 libpango-1.0-0 libpangocairo-1.0-0 libpangoft2-1.0-0 libpixman-1-0 librsvg2-2 libshine3 libsnappy1v5 libsoxr0 libspeex1 libssh-gcrypt-4 libswresample3 libswscale5 libthai0 libtheora0 libtiff5 libtwolame0 libva-drm2 libva-x11-2 libva2 libvdpau1 libvorbis0a libvorbisenc2 libvorbisfile3 libvpx5 libwavpack1 libwebp6 libwebpmux3 libx264-155 libx265-165 libxcb-render0 libxcb-shm0 libxfixes3 libxrender1 libxvidcore4 libzvbi0
+
+RUN pip3 install --upgrade pip wheel setuptools
+
+# Hold numpy at 1.19.2 to support various binary packages
+RUN pip3 install --index-url https://www.piwheels.org/simple   --only-binary=:all: opencv-python-headless==4.5.1.48 numpy==1.19.2
+
+WORKDIR /tmp
+RUN wget https://raw.githubusercontent.com/PINTO0309/TensorflowLite-bin/main/2.7.0/download_tflite_runtime-2.7.0-cp37-none-linux_armv7l.whl.sh
+RUN bash download_tflite_runtime-2.7.0-cp37-none-linux_armv7l.whl.sh
+RUN pip3 install --only-binary=:all: tflite_runtime-2.7.0-cp37-none-linux_armv7l.whl
+
+
+# RUN pip3 install --index-url https://www.piwheels.org/simple -U -i https://www.piwheels.org/simple opencv-python keras pandas==1.1.5 matplotlib cycler uvloop==0.14.0 numpy quart gmqtt cameratransform pillow pytz python-dateutil  # --platform linux/arm/v7  --only-binary=:all:
+RUN pip3 install --index-url https://www.piwheels.org/simple --only-binary=:all: -U keras==2.3.1 pandas==1.1.5 matplotlib cycler uvloop==0.14.0 quart gmqtt cameratransform pillow pytz python-dateutil
+
+RUN pip3 install   --extra-index-url https://www.piwheels.org/simple https://files.pythonhosted.org/packages/74/7e/622d9849abf3afb81e482ffc170758742e392ee129ce1540611199a59237/tensorflow_estimator-2.4.0-py2.py3-none-any.whl https://files.pythonhosted.org/packages/02/83/179c8f76e5716030cc3ee9433721161cfcc1d854e9ba20c9205180bb100a/tensorboard-2.4.0-py3-none-any.whl
+RUN pip3 install  --extra-index-url https://www.piwheels.org/simple --only-binary=:all:  https://github.com/bitsy-ai/tensorflow-arm-bin/releases/download/v2.4.0/tensorflow-2.4.0-cp37-none-linux_armv7l.whl
+
+# RUN pip3 install https://github.com/google-coral/pycoral/releases/download/release-frogfish/tflite_runtime-2.5.0-cp37-cp37m-linux_armv7l.whl \
+#                  https://github.com/google-coral/pycoral/releases/download/v1.0.1/pycoral-1.0.1-cp37-cp37m-linux_armv7l.whl
+
+RUN pip3 install tflite_support
 
 
 USER root
@@ -55,6 +74,7 @@ RUN chmod +x /usr/bin/deepdish.sh /usr/bin/yolov5-demo.sh
 COPY *.py /deepdish/
 COPY detectors/mobilenet/* /deepdish/detectors/mobilenet/
 COPY detectors/yolo/* /deepdish/detectors/yolo/
+COPY detectors/efficientdet_lite0/* /deepdish/detectors/efficientdet_lite0/
 COPY detectors/yolov5/* /deepdish/detectors/yolov5/
 COPY encoders/* /deepdish/encoders/
 COPY yolo3/*.py /deepdish/yolo3/
