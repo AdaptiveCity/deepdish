@@ -208,13 +208,13 @@ class RenderInfo:
 # Output elements
 
 class FrameInfo:
-    def __init__(self, t_frame, count):
+    def __init__(self, t_frame, framenum):
         self.t_frame = t_frame
-        self.frame_count = count
+        self.framenum = framenum
         self.priority = 0
 
     def do_text(self, handle, elements):
-        handle.write('Frame {}:'.format(self.frame_count))
+        handle.write('Frame {}:'.format(self.framenum))
         for e in elements:
             if isinstance(e, TimingInfo):
                 handle.write(' {}={:.0f}ms'.format(e.short_label, e.delta_t*1000))
@@ -435,16 +435,25 @@ class Pipeline:
 
         # Initialise database
         self.db = {}
+        self.data_lock = asyncio.Lock()
+        self.framenum_committed = 0 # The frame number associated with
+                                    # the information kept in the
+                                    # following variables
         self.delcount = dict([(lbl, 0) for lbl in self.wanted_labels])
         self.intcount = dict([(lbl, 0) for lbl in self.wanted_labels])
         self.poscount = dict([(lbl, 0) for lbl in self.wanted_labels])
         self.negcount = dict([(lbl, 0) for lbl in self.wanted_labels])
-        self.frame_count = 0
 
         self.mqtt = None
         self.topic = self.args.mqtt_topic
         self.mqtt_acp_id = self.args.mqtt_acp_id
         self.heartbeat_delay_secs = self.args.heartbeat_delay_secs
+
+        self.frame_count = 0 # self.frame_count is only used to assign
+                             # the next 'framenum' number. It should
+                             # not be read otherwise because
+                             # pipelining means there could be
+                             # overlapping stages & race conditions.
 
         self.log = self.args.log
         if self.log is not None:
@@ -705,8 +714,10 @@ class Pipeline:
         while self.running:
             # Obtain next video frame
             (frame, dt_cap, t_frame, t_prev) = await q_in.get()
-
             t_frame_recv = time()
+            framenum = self.frame_count
+            self.frame_count += 1 # prep for the next one
+            # Frame num. 'framenum' begins its journey through the pipeline here
 
             # Apply background subtraction to find image-mask of areas of motion
             if self.background_subtraction:
@@ -752,7 +763,7 @@ class Pipeline:
                 self.powersave_delay = 0
 
             # Send results to next step in pipeline
-            elements = [FrameInfo(t_frame, self.frame_count),
+            elements = [FrameInfo(t_frame, framenum),
                         CameraImage(Image.fromarray(cv2.cvtColor(frame,cv2.COLOR_BGRA2RGB), mode='RGB')),
                         CameraCountLine(self.cameracountline),
                         TimingInfo('Frame capture latency', 'fcap', dt_cap),
@@ -761,13 +772,13 @@ class Pipeline:
                         #TimingInfo('Frame prep latency', 'prep', t_prep - t_frame_recv),
                         TimingInfo('Background subtraction latency', 'bsub', t_backsub - t_frame_recv),
                         TimingInfo('Object detection latency', 'objd', delta_t+(t2-t1))]
-            await q_out.put((frame, boxes, labels, scores, elements, time()))
+            await q_out.put((frame, framenum, boxes, labels, scores, elements, time()))
 
     async def encode_features(self, q_in, q_out):
         with concurrent.futures.ThreadPoolExecutor() as pool:
             while self.running:
                 # Obtain next video frame and object detection boxes
-                (frame, boxes, labels, scores, elements, t_prev) = await q_in.get()
+                (frame, framenum, boxes, labels, scores, elements, t_prev) = await q_in.get()
 
                 t1 = time()
                 # Run non-max suppression to eliminate spurious boxes
@@ -779,7 +790,7 @@ class Pipeline:
                 labels1 = [labels[i] for i in indices]
 
                 # Consider and modify boxes based on info contained in the frame record
-                boxesA2, labels2, scoresA2 = self.framerec.process_boxes(self.frame_count, boxesA1, labels1, scoresA1)
+                boxesA2, labels2, scoresA2 = self.framerec.process_boxes(framenum, boxesA1, labels1, scoresA1)
 
                 # Run feature encoder within a Thread Pool
                 features = await self.loop.run_in_executor(pool, self.encoder, frame, boxesA2)
@@ -789,35 +800,37 @@ class Pipeline:
                 detections = [Detection(bbox, lbl, scr, feature) for bbox, lbl, scr, feature in zip(boxesA2, labels2, scoresA2, features)]
 
                 # Consider and modify detections based on info contained in the frame record
-                detections = self.framerec.process_detections(self.frame_count, detections)
+                detections = self.framerec.process_detections(framenum, detections)
                 elements.append(TimingInfo('Q1 / Q2 latency', 'q2', (t1 - t_prev)))
                 elements.append(TimingInfo('Feature encoder latency', 'feat', (t2-t1)))
-                await q_out.put((detections, elements, time()))
+                await q_out.put((framenum, detections, elements, time()))
 
     async def track_objects(self, q_in, q_out):
         while self.running:
-            (detections, elements, t_prev) = await q_in.get()
+            (framenum, detections, elements, t_prev) = await q_in.get()
             t1 = time()
             self.tracker.predict()
             self.tracker.update(detections)
             t2 = time()
             elements.append(TimingInfo('Q2 / Q3 latency', 'q3', (t1 - t_prev)))
             elements.append(TimingInfo('Tracker latency', 'trak', (t2-t1)))
-            await q_out.put((detections, elements, time()))
+            await q_out.put((framenum, detections, elements, time()))
 
     async def process_results(self, q_in, q_out):
         while self.running:
-            (detections, elements, t_prev) = await(q_in.get())
+            (framenum, detections, elements, t_prev) = await(q_in.get())
 
             t1=time()
+            delcounts={}
             for track in self.tracker.deleted_tracks:
                 i = track.track_id
                 if track.is_deleted():
-                    self.check_deleted_track(track)
+                    delcounts = self.check_deleted_track(track)
 
             # Consider and modify tracks based on info in frame record
-            self.tracker.tracks = self.framerec.process_tracking(self.frame_count, self.tracker)
+            self.tracker.tracks = self.framerec.process_tracking(framenum, self.tracker)
 
+            intersects = [] # accumulate list of intersection events
             for track in self.tracker.tracks:
                 i = track.track_id
                 lbl = track.get_label()
@@ -845,16 +858,8 @@ class Pipeline:
                     q2 = np.array(self.db[i][-2])
                     cp = np.cross(q1 - p1,q2 - p2)
                     if intersection(p1,q1,p2,q2):
-                        self.intcount[lbl]+=1
-                        print("track_id={} ({}) just intersected camera countline; cross-prod={}; intcount={}".format(i,lbl,cp,self.intcount))
-                        elements.append(TrackedPathIntersection(pts[-4:]))
-                        if cp >= 0:
-                            self.poscount[lbl]+=1
-                            crossing_type = 'pos'
-                        else:
-                            self.negcount[lbl]+=1
-                            crossing_type = 'neg'
-                        await self.publish_crossing_event(elements, crossing_type)
+                        # accumulate intersection events for later processing
+                        intersects.append({'label': lbl, 'element': TrackedPathIntersection(pts[-4:]), 'cp': cp})
 
                 if self.args.object_annotation.lower() == 'id':
                     annot = str(track.track_id)
@@ -874,6 +879,32 @@ class Pipeline:
                     else:
                         pts = pts_pretransform[:,:2].reshape(-1)
                     elements.append(TopDownObj(self.topdownview,pts))
+
+            async with self.data_lock:
+                # update global state within lock
+                for inter in intersects:
+                    lbl = inter['label']
+                    if inter['cp'] >= 0:  # check cross product for direction
+                        self.poscount[lbl] += 1
+                    else:
+                        self.negcount[lbl] += 1
+                    self.intcount[lbl] += 1
+                    print("track_id={} ({}) just intersected camera countline; cross-prod={}; intcount={}".format(i,lbl,cp,self.intcount))
+
+                for lbl,delta in delcounts:
+                    self.delcount[l] += delta
+                    print("delcount[{}]={}".format(lbl,self.delcount[lbl]))
+
+                self.framenum_committed = framenum
+
+            # fire off I/O-related events that occur after intersections are detected
+            for inter in intersects:
+                if inter['cp'] >= 0:
+                    crossing_type = 'pos'
+                else:
+                    crossing_type = 'neg'
+                elements.append(inter['element'])
+                await self.publish_crossing_event(elements, crossing_type)
 
             for det in detections:
                 bbox = det.to_tlbr()
@@ -901,18 +932,20 @@ class Pipeline:
         for e in elements:
             if isinstance(e, FrameInfo):
                 t_frame = e.t_frame
-                count = e.frame_count
+                count = e.framenum
                 break
 
         temp = await self.get_cpu_temp()
         if self.mqtt is not None:
             payload = {'acp_ts': str(t_frame), 'acp_id': self.mqtt_acp_id, 'acp_event': 'crossing', 'acp_event_value': crossing_type, 'temp': temp}
-            self.update_payload_with_state(payload)
+            async with self.data_lock:
+                self.update_payload_with_state(payload)
             self.mqtt.publish(self.topic, json.dumps(payload))
 
         if self.log is not None:
             payload = {'timestamp': str(t_frame), 'asctime': asctime(localtime(t_frame)), 'frame_count': count, 'temp': temp}
-            self.update_payload_with_state(payload)
+            async with self.data_lock:
+                self.update_payload_with_state(payload)
             async with aiofiles.open(self.log, mode='a+') as f:
                 await f.write(json.dumps(payload) + '\n')
 
@@ -921,12 +954,15 @@ class Pipeline:
             temp = await self.get_cpu_temp()
             if self.mqtt is not None:
                 payload = {'acp_ts': str(time()), 'acp_id': self.mqtt_acp_id, 'temp': temp}
-                self.update_payload_with_state(payload)
+                async with self.data_lock:
+                    self.update_payload_with_state(payload)
                 self.mqtt.publish(self.topic, json.dumps(payload))
 
             if self.log is not None:
-                payload = {'timestamp': str(time()), 'asctime': asctime(), 'frame_count': self.frame_count, 'temp': temp}
-                self.update_payload_with_state(payload)
+                payload = {'timestamp': str(time()), 'asctime': asctime(), 'temp': temp}
+                async with self.data_lock:
+                    payload['frame_count'] = self.framenum_committed
+                    self.update_payload_with_state(payload)
                 async with aiofiles.open(self.log, mode='a+') as f:
                     await f.write(json.dumps(payload) + '\n')
 
@@ -1016,7 +1052,6 @@ class Pipeline:
 
                 self.text_output(sys.stdout, elements)
 
-                self.frame_count += 1
                 if self.everyframe is not None:
                     # Notify other side that this frame is completely processed
                     self.everyframe.set()
@@ -1026,12 +1061,14 @@ class Pipeline:
 
     def check_deleted_track(self, track):
         i = track.track_id
+        delcounts = {}
         if i in self.db and len(self.db[i]) > 1:
             if any_intersection(self.cameracountline[0], self.cameracountline[1], np.array(self.db[i])):
                 l = track.get_label()
-                self.delcount[l]+=1
-                print("delcount[{}]={}".format(l,self.delcount[l]))
+                if l not in delcounts: delcounts[l] = 0
+                delcounts[l]+=1
             self.db[i] = []
+        return delcounts
 
     async def start(self):
         self.running = True
