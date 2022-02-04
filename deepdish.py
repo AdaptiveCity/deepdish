@@ -891,7 +891,7 @@ class Pipeline:
                     self.intcount[lbl] += 1
                     print("track_id={} ({}) just intersected camera countline; cross-prod={}; intcount={}".format(i,lbl,cp,self.intcount))
 
-                for lbl,delta in delcounts:
+                for lbl, delta in delcounts.items():
                     self.delcount[l] += delta
                     print("delcount[{}]={}".format(lbl,self.delcount[lbl]))
 
