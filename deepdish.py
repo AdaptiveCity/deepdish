@@ -892,7 +892,7 @@ class Pipeline:
                     print("track_id={} ({}) just intersected camera countline; cross-prod={}; intcount={}".format(i,lbl,cp,self.intcount))
 
                 for lbl, delta in delcounts.items():
-                    self.delcount[l] += delta
+                    self.delcount[lbl] += delta
                     print("delcount[{}]={}".format(lbl,self.delcount[lbl]))
 
                 self.framenum_committed = framenum
