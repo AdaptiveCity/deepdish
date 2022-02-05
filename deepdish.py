@@ -1026,7 +1026,8 @@ class Pipeline:
                 (elements, t_prev) = await q_in.get()
 
                 t1 = time()
-                await self.graphical_output(render, elements, (output_w, output_h))
+                if not self.args.disable_graphics:
+                    await self.graphical_output(render, elements, (output_w, output_h))
 
                 for e in elements:
                     if isinstance(e, FrameInfo):
@@ -1149,6 +1150,8 @@ def get_arguments():
                         default=640, type=int)
     parser.add_argument('--camera-height', help='Camera resolution height in pixels',
                         default=480, type=int)
+    parser.add_argument('--disable-graphics', help='Disable all graphical output',
+                        default=False, action='store_true')
     parser.add_argument('--streaming', help='Stream video over the web?',
                         default=True, type=bool)
     parser.add_argument('--streaming-port', help='TCP port for web video stream',
