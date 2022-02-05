@@ -398,6 +398,9 @@ class Pipeline:
         # Initialise object detector (for some reason it has to happen
         # here & not within detect_objects(), or else the inference engine
         # gets upset and starts throwing NaNs at me. Thanks, Python.)
+
+        use_edgetpu = 'edgetpu' in self.args.model and not self.args.disable_edgetpu
+
         if 'yolov5' in self.args.model:
             self.object_detector = YOLOV5(wanted_labels=self.wanted_labels, model_file=model, label_file=labels, num_threads=self.args.num_threads)
         elif 'yolo' in self.args.model:
@@ -406,14 +409,14 @@ class Pipeline:
             self.object_detector = SAVED_MODEL(wanted_labels=self.wanted_labels, model_file=model, label_file=labels, num_threads=self.args.num_threads)
         elif 'mobilenet' in self.args.model:
             self.object_detector = SSD_MOBILENET(wanted_labels=self.wanted_labels, model_file=model, label_file=labels,
-                    num_threads=self.args.num_threads, edgetpu=self.args.edgetpu)
+                    num_threads=self.args.num_threads, edgetpu=use_edgetpu)
         elif 'tflite' in self.args.model:
             self.object_detector = TFLITE(wanted_labels=self.wanted_labels, model_file=model, label_file=labels,
-                    num_threads=self.args.num_threads, edgetpu=self.args.edgetpu)
-        elif self.args.edgetpu:
+                    num_threads=self.args.num_threads, edgetpu=use_edgetpu)
+        elif use_edgetpu:
             from tools.edgetpu import EDGETPU
             self.object_detector = EDGETPU(wanted_labels=self.wanted_labels, model_file=model, label_file=labels,
-                    num_threads=self.args.num_threads, edgetpu=self.args.edgetpu)
+                    num_threads=self.args.num_threads, edgetpu=use_edgetpu)
         else:
             print('Unsure what to do with model file {}'.format(self.args.model))
             sys.exit(1)
@@ -1113,7 +1116,7 @@ def get_arguments():
                         default=None)
     parser.add_argument('--model', help='File path of object detection .tflite file.',
                         required=True)
-    parser.add_argument('--edgetpu', help='Enable usage of Edge TPU accelerator.',
+    parser.add_argument('--disable-edgetpu', help='Disable any usage of Edge TPU accelerator altogether.',
                         default=False, action='store_true')
     parser.add_argument('--encoder-model', help='File path of feature encoder .pb file.',
                         required=False)
