@@ -36,7 +36,7 @@ RUN pip3 install --only-binary=:all: tflite_runtime-2.7.0-cp37-none-linux_armv7l
 
 
 # RUN pip3 install --index-url https://www.piwheels.org/simple -U -i https://www.piwheels.org/simple opencv-python keras pandas==1.1.5 matplotlib cycler uvloop==0.14.0 numpy quart gmqtt cameratransform pillow pytz python-dateutil  # --platform linux/arm/v7  --only-binary=:all:
-RUN pip3 install --index-url https://www.piwheels.org/simple --only-binary=:all: -U keras==2.3.1 pandas==1.1.5 matplotlib cycler uvloop==0.14.0 quart gmqtt cameratransform pillow pytz python-dateutil
+RUN pip3 install --index-url https://www.piwheels.org/simple --only-binary=:all: -U keras==2.3.1 pandas==1.1.5 matplotlib cycler uvloop==0.14.0 quart hypercorn gmqtt cameratransform pillow pytz python-dateutil
 
 RUN pip3 install   --extra-index-url https://www.piwheels.org/simple https://files.pythonhosted.org/packages/74/7e/622d9849abf3afb81e482ffc170758742e392ee129ce1540611199a59237/tensorflow_estimator-2.4.0-py2.py3-none-any.whl https://files.pythonhosted.org/packages/02/83/179c8f76e5716030cc3ee9433721161cfcc1d854e9ba20c9205180bb100a/tensorboard-2.4.0-py3-none-any.whl
 RUN pip3 install  --extra-index-url https://www.piwheels.org/simple --only-binary=:all:  https://github.com/bitsy-ai/tensorflow-arm-bin/releases/download/v2.4.0/tensorflow-2.4.0-cp37-none-linux_armv7l.whl

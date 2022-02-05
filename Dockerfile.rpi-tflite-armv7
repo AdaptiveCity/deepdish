@@ -39,7 +39,7 @@ RUN apt-get install -y --allow-downgrades \
 RUN pip3 install --upgrade pip wheel setuptools
 
 # Hold numpy at 1.19.2 while installing tflite-runtime for dependency purposes
-RUN pip3 install --extra-index-url https://www.piwheels.org/simple --only-binary=:all: -U opencv-python-headless==4.5.1.48 numpy==1.19.2 keras==2.3.1 pandas==1.1.5 matplotlib cycler uvloop==0.14.0 quart gmqtt cameratransform pillow pytz python-dateutil tflite_support
+RUN pip3 install --extra-index-url https://www.piwheels.org/simple --only-binary=:all: -U opencv-python-headless==4.5.1.48 numpy==1.19.2 keras==2.3.1 pandas==1.1.5 matplotlib cycler uvloop==0.14.0 quart hypercorn gmqtt cameratransform pillow pytz python-dateutil tflite_support
 
 # TFLite-runtime 2.7.0 for ARMv7
 WORKDIR /tmp

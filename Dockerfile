@@ -22,7 +22,7 @@ RUN apt-get remove -y \
 
 RUN pip3 install --upgrade pip
 RUN pip3 install -U https://github.com/google-coral/pycoral/releases/download/v2.0.0/tflite_runtime-2.5.0.post1-cp38-cp38-linux_x86_64.whl
-RUN pip3 install -U keras quart gmqtt cameratransform scipy uvloop==0.14.0 matplotlib opencv-python scikit-learn numpy tflite_support datumaro
+RUN pip3 install -U keras quart gmqtt cameratransform scipy uvloop==0.14.0 matplotlib opencv-python scikit-learn numpy tflite_support datumaro hypercorn
 
 USER root
 RUN mkdir -p /deepdish/detectors/yolo
