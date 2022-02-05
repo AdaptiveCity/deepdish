@@ -64,6 +64,8 @@ import json
 import xml.etree.ElementTree as ET
 
 from quart import Quart, Response, current_app
+from hypercorn.asyncio import serve
+from hypercorn.config import Config
 import threading
 import faulthandler
 
@@ -452,6 +454,9 @@ class Pipeline:
         self.mqtt_acp_id = self.args.mqtt_acp_id
         self.heartbeat_delay_secs = self.args.heartbeat_delay_secs
 
+        self.final_frame = None # Not set until the final frame is
+                                # reached and known, if ever.
+
         self.frame_count = 0 # self.frame_count is only used to assign
                              # the next 'framenum' number. It should
                              # not be read otherwise because
@@ -640,8 +645,11 @@ class Pipeline:
             print('Framebuffer device: {} resolution: {},{}'.format(self.framebufdev,w,h))
 
     def shutdown(self):
+        global shutdown_event
         self.running = False
+        print('Shutting down pipeline.')
         if self.args.output_cvat_dir is not None:
+            print('Writing CVAT output.')
             # Write CVAT-format annotations XML file if possible
             if self.xmltree is not None:
                 meta = self.xmltree.getroot().find('./meta')
@@ -651,8 +659,11 @@ class Pipeline:
             xmloutfile = os.path.join(self.args.output_cvat_dir, "annotations.xml")
             with open(xmloutfile, mode='wb') as f:
                 xmlout.write(f, xml_declaration=True, encoding='utf-8', short_empty_elements=False)
-        for p in asyncio.all_tasks():
-            p.cancel()
+        if cmdserver:
+            print('Shutting down command server.')
+            cmdserver.close()
+        print('Shutting down Quart server.')
+        shutdown_event.set()
 
     async def get_cpu_temp(self):
         async with aiofiles.open(self.cpu_temp_file, mode='r') as f:
@@ -679,11 +690,11 @@ class Pipeline:
                     # note that .sleep(0) doesn't work right, causing severely inconsistent timings
                 (frame, t_frame, dt_cap) = msg
 
-                if self.everyframe: box.set_message(None) # avoid repeating frames
+                if self.everyframe:
+                    box.set_message(None) # avoid repeating frames
 
                 if frame is None:
-                    print('No more frames.')
-                    self.shutdown()
+                    self.final_frame = self.frame_count - 1
                     break
 
                 if self.args.camera_flip:
@@ -721,6 +732,10 @@ class Pipeline:
             framenum = self.frame_count
             self.frame_count += 1 # prep for the next one
             # Frame num. 'framenum' begins its journey through the pipeline here
+
+            if self.everyframe:
+                # Notify other side that this frame is in the pipeline
+                self.everyframe.set()
 
             # Apply background subtraction to find image-mask of areas of motion
             if self.background_subtraction:
@@ -1032,8 +1047,10 @@ class Pipeline:
                 if not self.args.disable_graphics:
                     await self.graphical_output(render, elements, (output_w, output_h))
 
+                framenum = None
                 for e in elements:
                     if isinstance(e, FrameInfo):
+                        framenum = e.framenum
                         t_frame = e.t_frame
                         break
                 elements.append(TimingInfo('Q4 / Q5 latency', 'q5', t1 - t_prev))
@@ -1056,9 +1073,10 @@ class Pipeline:
 
                 self.text_output(sys.stdout, elements)
 
-                if self.everyframe is not None:
-                    # Notify other side that this frame is completely processed
-                    self.everyframe.set()
+                # Check if we're done with all frames
+                if self.final_frame:
+                    if framenum == self.final_frame:
+                        break
 
         finally:
             self.output.release()
@@ -1082,7 +1100,7 @@ class Pipeline:
         resultQueue = asyncio.Queue(maxsize=1)
         drawQueue = asyncio.Queue(maxsize=1)
 
-        asyncio.ensure_future(self.render_output(drawQueue))
+        render_task = asyncio.ensure_future(self.render_output(drawQueue))
         asyncio.ensure_future(self.process_results(resultQueue, drawQueue))
         asyncio.ensure_future(self.track_objects(detectionQueue, resultQueue))
         asyncio.ensure_future(self.encode_features(objectQueue, detectionQueue))
@@ -1092,7 +1110,8 @@ class Pipeline:
         capthread = threading.Thread(target=capthread_f, args=(self.cap,box,self.everyframe), daemon=True)
         capthread.start()
         await self.capture(cameraQueue, box)
-        self.running = False
+        await render_task
+        self.shutdown()
 
 def get_arguments():
     basedir = os.getenv('DEEPDISHHOME','.')
@@ -1233,21 +1252,20 @@ class CommandServer():
 cmdserver = None
 
 # signal handlers
-async def cancel_and_shutdown(loop, sig=None):
+async def cancel_and_shutdown(loop, pipeline, sig=None):
     if sig is not None: print('Signal received: {}'.format(sig.name))
-    print('Shutting down all tasks')
-    ps = [p for p in asyncio.Task.all_tasks() if p is not asyncio.Task.current_task()]
-    [p.cancel() for p in ps]
-    await asyncio.gather(*ps, return_exceptions=True)
+    pipeline.shutdown()
 
-def handle_exception(loop, context):
-    msg = context.get("message", "no message")
-    exc = context.get("exception", None)
-    print('handle_exception: {}'.format(msg))
-    if exc is not None:
-        for s in traceback.format_exception(etype=type(exc), value=exc, tb=exc.__traceback__):
-            print(s)
-    asyncio.ensure_future(cancel_and_shutdown(loop))
+def make_exception_handler(pipeline):
+    def handler(loop, context):
+        msg = context.get("message", "no message")
+        exc = context.get("exception", None)
+        print('handle_exception: {}'.format(msg))
+        if exc is not None:
+            for s in traceback.format_exception(etype=type(exc), value=exc, tb=exc.__traceback__):
+                print(s)
+        asyncio.ensure_future(cancel_and_shutdown(loop, pipeline))
+    return handler
 
 @webapp.before_serving
 async def main():
@@ -1264,23 +1282,29 @@ async def main():
 
     signals = (signal.SIGHUP, signal.SIGTERM, signal.SIGINT)
     for s in signals:
-        loop.add_signal_handler(s, lambda s=s: asyncio.create_task(cancel_and_shutdown(loop, s)))
-    loop.set_exception_handler(handle_exception)
+        loop.add_signal_handler(s, lambda s=s: asyncio.create_task(cancel_and_shutdown(loop, pipeline, s)))
+    loop.set_exception_handler(make_exception_handler(pipeline))
 
     # Kickstart the main pipeline
     asyncio.ensure_future(pipeline.start())
     asyncio.ensure_future(pipeline.periodic_heartbeat())
 
-    # await loop.run_until_complete(asyncio.Task.all_tasks()) # doesn't seem to be needed
-
 @webapp.after_serving
 async def shutdown():
     global cmdserver
-    cmdserver.close()
+    if cmdserver:
+        cmdserver.close()
+    cmdserver = None
+
+
+async def start_webapp():
+    global shutdown_event
+    shutdown_event = asyncio.Event()
+    await serve(webapp, Config(), shutdown_trigger=shutdown_event.wait)
 
 if __name__ == '__main__':
     uvloop.install()
     try:
-        webapp.run()
+        asyncio.run(start_webapp())
     except concurrent.futures.CancelledError:
         pass

@@ -8,3 +8,4 @@ simplejson
 gmqtt
 opencv-python
 uvloop
+hypercorn
