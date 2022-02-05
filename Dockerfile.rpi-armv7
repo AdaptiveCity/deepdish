@@ -58,6 +58,7 @@ ARG GROUP_ID
 RUN addgroup --gid $GROUP_ID user
 RUN adduser --disabled-password --gecos '' --uid $USER_ID --gid 0 user
 RUN adduser user plugdev
+RUN adduser user video
 
 RUN mkdir -p /work
 RUN chown -R user:user /work # /yolo
