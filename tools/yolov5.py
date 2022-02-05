@@ -10,7 +10,10 @@ from time import time
 try:
     import keras
 except:
-    from tensorflow import keras
+    try:
+        from tensorflow import keras
+    except:
+        pass
 try:
   # Import TFLite interpreter from tflite_runtime package if it's available.
   from tflite_runtime.interpreter import Interpreter
