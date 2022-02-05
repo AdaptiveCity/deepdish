@@ -404,7 +404,7 @@ class Pipeline:
         use_edgetpu = 'edgetpu' in self.args.model and not self.args.disable_edgetpu
 
         if 'yolov5' in self.args.model:
-            self.object_detector = YOLOV5(wanted_labels=self.wanted_labels, model_file=model, label_file=labels, num_threads=self.args.num_threads)
+            self.object_detector = YOLOV5(wanted_labels=self.wanted_labels, model_file=model, label_file=labels, num_threads=self.args.num_threads, edgetpu=use_edgetpu)
         elif 'yolo' in self.args.model:
             self.object_detector = YOLO(wanted_labels=self.wanted_labels, model_file=model, label_file=labels, num_threads=self.args.num_threads)
         elif 'saved_model' in self.args.model:

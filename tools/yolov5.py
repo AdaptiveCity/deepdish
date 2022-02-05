@@ -1,15 +1,38 @@
 import sys
+import platform
 import os
 import numpy as np
-import keras
-import tflite_runtime.interpreter as tflite
 from PIL import Image
 from pathlib import Path
 import yaml
-import time
+from time import time
+# pylint: disable=g-import-not-at-top
+try:
+    import keras
+except:
+    from tensorflow import keras
+try:
+  # Import TFLite interpreter from tflite_runtime package if it's available.
+  from tflite_runtime.interpreter import Interpreter
+  from tflite_runtime.interpreter import load_delegate
+except ImportError:
+  # If not, fallback to use the TFLite interpreter from the full TF package.
+  import tensorflow as tf
+
+  Interpreter = tf.lite.Interpreter
+  load_delegate = tf.lite.experimental.load_delegate
+# pylint: enable=g-import-not-at-top
+
+def edgetpu_lib_name():
+  """Returns the library name of EdgeTPU in the current platform."""
+  return {
+      'Darwin': 'libedgetpu.1.dylib',
+      'Linux': 'libedgetpu.so.1',
+      'Windows': 'edgetpu.dll',
+  }.get(platform.system(), None)
 
 class YOLOV5:
-    def __init__(self, wanted_labels=None, model_file=None, label_file=None, num_threads=None, edgetpu=False, libedgetpu=None, score_threshold=0.5):
+    def __init__(self, wanted_labels=None, model_file=None, label_file=None, num_threads=None, edgetpu=False, libedgetpu=None, score_threshold=0.25):
         basedir = os.getenv('DEEPDISHHOME','.')
         if model_file is None:
           model_file = os.path.join(basedir, 'detectors/yolov5/yolov5s-int8.tflite')
@@ -22,27 +45,29 @@ class YOLOV5:
         self.label_file = label_file
         self.score_threshold = score_threshold
         self.labels = self._get_labels()
-        self.use_edgetpu = False
+        self.use_edgetpu = edgetpu
         self.int8 = False
 
         if 'saved_model' in model_file:
             self.mode = 'saved_model'
+            if 'keras' not in sys.modules:
+                print('yolov5: saved_model mode requires keras')
+                sys.exit(1)
         elif '.tflite' in model_file:
-            if 'edgetpu' in model_file:
-                self.use_edgetpu = True
-            if 'int8' in model_file:
-                self.int8 = True
             self.mode = 'tflite'
+            if 'int8' in model_file: self.int8 = True
         else:
             print('unable to determine format of yolov5 model')
             sys.exit(1)
 
+        if libedgetpu is None:
+            libedgetpu = edgetpu_lib_name()
+
         if self.mode == 'tflite':
             # Load TFLite model and allocate tensors.
-            self.interpreter = tflite.Interpreter(
+            self.interpreter = Interpreter(
                 model_path=model_file,
-                experimental_delegates=
-                    [tflite.load_delegate('libedgetpu.so.1')] if self.use_edgetpu else None)
+                experimental_delegates=[load_delegate(libedgetpu)] if self.use_edgetpu else None)
             self.interpreter.allocate_tensors()
 
             # Get input and output tensors.
@@ -69,12 +94,10 @@ class YOLOV5:
         img_size = img.size
         img_resized = img.convert('RGB').resize((self.width, self.height), Image.ANTIALIAS)
         input_data = np.expand_dims(img_resized, 0).astype(np.float32)
-        input_data /= 255.0
 
         if self.int8:
             scale, zero_point = self.input_details[0]['quantization']
-            input_data = input_data / scale + zero_point
-            input_data = input_data.astype(np.uint8)
+            input_data = (input_data / scale + zero_point).astype(np.uint8)
 
         if self.mode == 'tflite':
             self.interpreter.set_tensor(self.input_details[0]['index'], input_data)
@@ -82,6 +105,7 @@ class YOLOV5:
             output_data = self.interpreter.get_tensor(self.output_details[0]['index'])
             raw = np.copy(output_data)
         elif self.mode == 'saved_model':
+            input_data /= 255.0
             output_data = self.model(input_data).numpy()
 
         if self.int8:
@@ -89,14 +113,7 @@ class YOLOV5:
             output_data = output_data.astype(np.float32)
             output_data = (output_data - zero_point) * scale
 
-            def _make_grid(nx=20, ny=20):
-                yv, xv = torch.meshgrid([torch.arange(ny), torch.arange(nx)])
-                return torch.stack((xv, yv), 2).view((1, 1, ny * nx, 2)).float()
-
-            x = np.copy(output_data)
-        else:
-            x = np.copy(output_data)
-
+        x = np.copy(output_data)
         boxes = np.copy(x[..., :4])
         boxes[..., 0] = x[..., 0] - x[..., 2] / 2
         boxes[..., 1] = x[..., 1] - x[..., 3] / 2
@@ -107,11 +124,7 @@ class YOLOV5:
         confidences = np.take_along_axis(x, best_classes + 5, axis=-1)
         y = np.concatenate((boxes, confidences, best_classes.astype(np.float32)), axis=-1)
         y = y[np.where(y[..., 4] >= self.score_threshold)]
-
-        if self.mode == 'saved_model' or self.int8:
-            y[...,:4] *= np.array([img_size[0], img_size[1], img_size[0], img_size[1]])
-        elif self.mode == 'tflite':
-            y[...,:4] *= np.array([img_size[0]/self.width, img_size[1]/self.height, img_size[0]/self.width, img_size[1]/self.height])
+        y[...,:4] *= np.array([img_size[0], img_size[1], img_size[0], img_size[1]])
 
         return_boxs = []
         return_lbls = []
@@ -127,6 +140,3 @@ class YOLOV5:
                 return_lbls.append(label)
                 return_scrs.append(score)
         return (return_boxs, return_lbls, return_scrs)
-
-def sigmoid(x):
-    return np.exp(-np.logaddexp(0, -x))
