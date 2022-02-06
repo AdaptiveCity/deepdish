@@ -249,12 +249,14 @@ class TempInfo:
         json['temp']=self.temp
 
 class PipelineInfo:
-    def __init__(self, count):
+    def __init__(self, count, qsizes):
         self.count = count
         self.priority = 3
+        self.qsizes = qsizes
 
     def do_json(self, json):
         json['pipe']=self.count
+        json['qsizes']=self.qsizes
 
 # A detected object - simply the information conveyed by the object detector
 class DetectedObject:
@@ -1109,7 +1111,7 @@ class Pipeline:
 
                 await (self.pipeline_sem.acquire())
                 frames_in_flight = self.pipeline_sem._value
-                elements.append(PipelineInfo(frames_in_flight))
+                elements.append(PipelineInfo(frames_in_flight, [q.qsize() for q in self.queues]))
 
                 self.text_output(sys.stdout, elements)
 
