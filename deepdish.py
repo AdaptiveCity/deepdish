@@ -561,7 +561,7 @@ class Pipeline:
             self.mqtt = MQTTClient('deepdish')
             if self.args.mqtt_user is not None:
                 self.mqtt.set_auth_credentials(self.args.mqtt_user, self.args.mqtt_pass)
-            await self.mqtt.connect(self.args.mqtt_broker)
+            await self.mqtt.connect(self.args.mqtt_broker, self.args.mqtt_port)
             if self.topic is None:
                 self.topic = 'default/topic'
 
@@ -1197,13 +1197,15 @@ def get_arguments():
                         default=9090, type=int, metavar='PORT')
     parser.add_argument('--mqtt-broker', help='hostname of MQTT broker',
                         default=None, metavar='HOST')
+    parser.add_argument('--mqtt-port', help='port of MQTT broker',
+                        default=1883, metavar='PORT')
     parser.add_argument('--mqtt-acp-id', help='ACP identity of this MQTT publisher',
                         default=None, metavar='ID')
     parser.add_argument('--mqtt-user', help='username for MQTT login',
                         default=None, metavar='USER')
     parser.add_argument('--mqtt-pass', help='password for MQTT login',
                         default=None, metavar='PASS')
-    parser.add_argument('--mqtt-topic', help='topic for MQTT message',
+    parser.add_argument('--mqtt-topic', help='topic for MQTT message output',
                         default=None, metavar='TOPIC')
     parser.add_argument('--heartbeat-delay-secs', help='seconds between heartbeat MQTT updates',
                         default=60*5, metavar='SECS', type=int)
