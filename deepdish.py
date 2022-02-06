@@ -582,10 +582,15 @@ class Pipeline:
 
     def on_mqtt_connect(self, client, flags, rc, properties):
         self.mqtt_connect_event.set()
+        if self.args.mqtt_verbosity > 1:
+            payload = {'acp_ts': str(time()), 'acp_event': 'initialisation', 'model': self.args.model, 'input': self.input}
+            self.mqtt.publish(self.topic, json.dumps(payload))
 
     async def init_mqtt(self):
         if self.args.mqtt_broker is not None:
             self.mqtt = MQTTClient('deepdish')
+            if self.topic is None:
+                self.topic = 'default/topic'
             self.mqtt_connect_event = asyncio.Event()
             self.mqtt.on_connect = self.on_mqtt_connect
             self.mqtt.set_config({'reconnect_retries': 10, 'reconnect_delay': 1})
@@ -594,8 +599,6 @@ class Pipeline:
             print('Waiting to connect to MQTT broker.')
             await self.mqtt.connect(self.args.mqtt_broker, self.args.mqtt_port)
             await self.mqtt_connect_event.wait()
-            if self.topic is None:
-                self.topic = 'default/topic'
 
     def init_camera(self):
         self.input = self.args.input
@@ -702,6 +705,11 @@ class Pipeline:
         if cmdserver:
             print('Shutting down command server.')
             cmdserver.close()
+        if self.mqtt:
+            print('Shutting down MQTT client.')
+            if self.args.mqtt_verbosity > 1:
+                payload = {'acp_ts': str(time()), 'acp_event': 'shutdown', 'model': self.args.model, 'input': self.input}
+                self.mqtt.publish(self.topic, json.dumps(payload))
         print('Shutting down Quart server.')
         shutdown_event.set()
 
