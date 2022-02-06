@@ -226,6 +226,9 @@ class FrameInfo:
                 handle.write(' pipe={}'.format(e.count))
         handle.write('\n')
 
+    def do_json(self, json):
+        json['framenum'] = self.framenum
+
 class TimingInfo:
     def __init__(self, desc, short_label, delta_t):
         self.description = desc
@@ -233,15 +236,25 @@ class TimingInfo:
         self.delta_t = delta_t
         self.priority = 1
 
+    def do_json(self, json):
+        if 'timing' not in json: json['timing'] = {}
+        json['timing'][self.short_label]=round(self.delta_t*1000)
+
 class TempInfo:
     def __init__(self, temp):
         self.temp = temp
         self.priority = 2
 
+    def do_json(self, json):
+        json['temp']=self.temp
+
 class PipelineInfo:
     def __init__(self, count):
         self.count = count
         self.priority = 3
+
+    def do_json(self, json):
+        json['pipe']=self.count
 
 # A detected object - simply the information conveyed by the object detector
 class DetectedObject:
@@ -963,7 +976,7 @@ class Pipeline:
                 break
 
         temp = await self.get_cpu_temp()
-        if self.mqtt is not None:
+        if self.mqtt is not None and self.args.mqtt_verbosity > 0:
             payload = {'acp_ts': str(t_frame), 'acp_id': self.mqtt_acp_id, 'acp_event': 'crossing', 'acp_event_value': crossing_type, 'temp': temp}
             async with self.data_lock:
                 self.update_payload_with_state(payload)
@@ -979,7 +992,7 @@ class Pipeline:
     async def periodic_heartbeat(self):
         while True:
             temp = await self.get_cpu_temp()
-            if self.mqtt is not None:
+            if self.mqtt is not None and self.args.mqtt_verbosity > 0:
                 payload = {'acp_ts': str(time()), 'acp_id': self.mqtt_acp_id, 'temp': temp}
                 async with self.data_lock:
                     self.update_payload_with_state(payload)
@@ -1033,8 +1046,6 @@ class Pipeline:
                 self.framebufdev = None
         await streaminfo.set_frame(outputbgra)
 
-        #cv2.imshow('main', outputbgr)
-
     def text_output(self, handle, elements):
         # Sort elements by priority
         elements.sort(key=lambda e: e.priority)
@@ -1042,6 +1053,14 @@ class Pipeline:
         for e in elements:
             if hasattr(e, 'do_text'):
                 e.do_text(handle, elements)
+
+        # per-frame MQTT messages if enabled
+        if self.mqtt and self.args.mqtt_verbosity > 1:
+            jsondict = {}
+            for e in elements:
+                if hasattr(e, 'do_json'):
+                    e.do_json(jsondict)
+            self.mqtt.publish(self.topic, json.dumps(jsondict))
 
     async def render_output(self, q_in):
         (output_w, output_h) = self.input_size
@@ -1207,6 +1226,8 @@ def get_arguments():
                         default=None, metavar='PASS')
     parser.add_argument('--mqtt-topic', help='topic for MQTT message output',
                         default=None, metavar='TOPIC')
+    parser.add_argument('--mqtt-verbosity', help='0=quiet; 1=intersection events; 2=everything',
+                        default=1, type=int, metavar='LEVEL')
     parser.add_argument('--heartbeat-delay-secs', help='seconds between heartbeat MQTT updates',
                         default=60*5, metavar='SECS', type=int)
     parser.add_argument('--disable-background-subtraction', help='Disable background subtraction / motion detection',
