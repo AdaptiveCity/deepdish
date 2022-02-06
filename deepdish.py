@@ -267,12 +267,17 @@ class DetectedObject:
     def do_render(self, render):
         pts = list(np.int32(np.array(self.bbox).reshape(-1,2) * render.ratio).reshape(-1))
         render.draw.rectangle(pts, outline=self.outline)
+    def do_json(self, json):
+        if 'detections' not in json: json['detections'] = []
+        json['detections'].append({'bbox': self.bbox.astype(np.int32).tolist()})
 
 # A tracked object based on the output of the tracker
 class TrackedObject:
-    def __init__(self, bbox, txt):
+    def __init__(self, bbox, txt, lbl, track_id):
         self.bbox = bbox
         self.txt = txt
+        self.label = lbl
+        self.track_id = track_id
         self.priority = 6
         self.outline = (255, 255, 255)
         self.font_fill = (0, 255, 0)
@@ -281,6 +286,10 @@ class TrackedObject:
         pts = list(np.int32(np.array(self.bbox).reshape(-1,2) * render.ratio).reshape(-1))
         render.draw.rectangle(pts, outline=self.outline)
         render.draw.text(self.bbox[:2],str(self.txt), fill=self.font_fill, font=render.fontlib.fetch(self.font))
+    def do_json(self, json):
+        if 'tracks' not in json: json['tracks'] = []
+        json['tracks'].append({'bbox': self.bbox.astype(np.int32).tolist(), 'label': self.label, 'track_id': self.track_id})
+
 
 # Base class for graphical elements that draw a line
 class Line:
@@ -917,7 +926,7 @@ class Pipeline:
                     annot = lbl
                 else:
                     annot = ''
-                elements.append(TrackedObject(bbox, annot))
+                elements.append(TrackedObject(bbox, annot, lbl, track.track_id))
 
                 if self.cam is not None and self.topdownview is not None:
                     # Add to top-down view using cameratransform
