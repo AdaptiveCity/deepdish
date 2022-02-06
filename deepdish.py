@@ -228,6 +228,7 @@ class FrameInfo:
 
     def do_json(self, json):
         json['framenum'] = self.framenum
+        json['acp_ts'] = str(self.t_frame)
 
 class TimingInfo:
     def __init__(self, desc, short_label, delta_t):
@@ -1083,11 +1084,11 @@ class Pipeline:
 
         # per-frame MQTT messages if enabled
         if self.mqtt and self.args.mqtt_verbosity > 1:
-            jsondict = {}
+            payload = {'acp_event': 'frame'}
             for e in elements:
                 if hasattr(e, 'do_json'):
-                    e.do_json(jsondict)
-            self.mqtt.publish(self.topic, json.dumps(jsondict))
+                    e.do_json(payload)
+            self.mqtt.publish(self.topic, json.dumps(payload))
 
     async def render_output(self, q_in):
         (output_w, output_h) = self.input_size
