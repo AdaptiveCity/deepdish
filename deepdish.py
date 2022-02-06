@@ -572,6 +572,7 @@ class Pipeline:
     async def init_mqtt(self):
         if self.args.mqtt_broker is not None:
             self.mqtt = MQTTClient('deepdish')
+            self.mqtt.set_config({'reconnect_retries': 10, 'reconnect_delay': 1})
             if self.args.mqtt_user is not None:
                 self.mqtt.set_auth_credentials(self.args.mqtt_user, self.args.mqtt_pass)
             await self.mqtt.connect(self.args.mqtt_broker, self.args.mqtt_port)
