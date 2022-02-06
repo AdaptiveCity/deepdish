@@ -32,11 +32,9 @@ class SSDMobileNet:
     if edgetpu:
       if libedgetpu is None: libedgetpu = edgetpu_lib_name()
       delegate = load_delegate(libedgetpu)
-      self.interpreter = Interpreter(model_path, experimental_delegates=[delegate])
+      self.interpreter = Interpreter(model_path, num_threads=num_threads, experimental_delegates=[delegate])
     else:
-      self.interpreter = Interpreter(model_path)
-    if num_threads is not None and hasattr(self.interpreter, 'set_num_threads'):
-        self.interpreter.set_num_threads(num_threads)
+      self.interpreter = Interpreter(model_path, num_threads=num_threads)
     self.interpreter.allocate_tensors()
     self.input_details = self.interpreter.get_input_details()
     self.height = self.input_details[0]['shape'][1]

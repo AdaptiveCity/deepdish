@@ -70,6 +70,7 @@ class YOLOV5:
             # Load TFLite model and allocate tensors.
             self.interpreter = Interpreter(
                 model_path=model_file,
+                num_threads=num_threads,
                 experimental_delegates=[load_delegate(libedgetpu)] if self.use_edgetpu else None)
             self.interpreter.allocate_tensors()
 
