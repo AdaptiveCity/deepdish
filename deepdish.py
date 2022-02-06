@@ -569,13 +569,20 @@ class Pipeline:
                     # print("box frame={} outside={:d} occluded={:d} keyframe={:d} pts={} z_order={}".format(frame,outside,occluded,keyframe,pts,z_order))
                     self.framerec.add_annotated_track(frame, track_id, lblname, pts, outside, occluded, keyframe, z_order)
 
+    def on_mqtt_connect(self, client, flags, rc, properties):
+        self.mqtt_connect_event.set()
+
     async def init_mqtt(self):
         if self.args.mqtt_broker is not None:
             self.mqtt = MQTTClient('deepdish')
+            self.mqtt_connect_event = asyncio.Event()
+            self.mqtt.on_connect = self.on_mqtt_connect
             self.mqtt.set_config({'reconnect_retries': 10, 'reconnect_delay': 1})
             if self.args.mqtt_user is not None:
                 self.mqtt.set_auth_credentials(self.args.mqtt_user, self.args.mqtt_pass)
+            print('Waiting to connect to MQTT broker.')
             await self.mqtt.connect(self.args.mqtt_broker, self.args.mqtt_port)
+            await self.mqtt_connect_event.wait()
             if self.topic is None:
                 self.topic = 'default/topic'
 
