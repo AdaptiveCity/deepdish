@@ -222,6 +222,8 @@ class FrameInfo:
                 handle.write(' {}={:.0f}ms'.format(e.short_label, e.delta_t*1000))
             elif isinstance(e, TempInfo):
                 handle.write(' temp={:.0f}C'.format(e.temp))
+            elif isinstance(e, PipelineInfo):
+                handle.write(' pipe={}'.format(e.count))
         handle.write('\n')
 
 class TimingInfo:
@@ -235,6 +237,11 @@ class TempInfo:
     def __init__(self, temp):
         self.temp = temp
         self.priority = 2
+
+class PipelineInfo:
+    def __init__(self, count):
+        self.count = count
+        self.priority = 3
 
 # A detected object - simply the information conveyed by the object detector
 class DetectedObject:
@@ -454,6 +461,7 @@ class Pipeline:
         self.mqtt_acp_id = self.args.mqtt_acp_id
         self.heartbeat_delay_secs = self.args.heartbeat_delay_secs
 
+        self.pipeline_sem = asyncio.Semaphore()
         self.final_frame = None # Not set until the final frame is
                                 # reached and known, if ever.
 
@@ -732,6 +740,7 @@ class Pipeline:
             framenum = self.frame_count
             self.frame_count += 1 # prep for the next one
             # Frame num. 'framenum' begins its journey through the pipeline here
+            self.pipeline_sem.release()
 
             if self.everyframe:
                 # Notify other side that this frame is in the pipeline
@@ -1070,6 +1079,10 @@ class Pipeline:
 
                 temp = await self.get_cpu_temp()
                 elements.append(TempInfo(temp))
+
+                await (self.pipeline_sem.acquire())
+                frames_in_flight = self.pipeline_sem._value
+                elements.append(PipelineInfo(frames_in_flight))
 
                 self.text_output(sys.stdout, elements)
 
