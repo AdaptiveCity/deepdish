@@ -277,11 +277,12 @@ class DetectedObject:
 
 # A tracked object based on the output of the tracker
 class TrackedObject:
-    def __init__(self, bbox, txt, lbl, track_id):
+    def __init__(self, bbox, txt, lbl, conf, track_id):
         self.bbox = bbox
         self.txt = txt
         self.label = lbl
         self.track_id = track_id
+        self.confidence = conf
         self.priority = 6
         self.outline = (255, 255, 255)
         self.font_fill = (0, 255, 0)
@@ -292,7 +293,7 @@ class TrackedObject:
         render.draw.text(self.bbox[:2],str(self.txt), fill=self.font_fill, font=render.fontlib.fetch(self.font))
     def do_json(self, json):
         if 'tracks' not in json: json['tracks'] = []
-        json['tracks'].append({'bbox': self.bbox.astype(np.int32).tolist(), 'label': self.label, 'track_id': self.track_id})
+        json['tracks'].append({'bbox': self.bbox.astype(np.int32).tolist(), 'label': self.label, 'confidence': self.confidence, 'track_id': self.track_id})
 
 
 # Base class for graphical elements that draw a line
@@ -915,7 +916,7 @@ class Pipeline:
             intersects = [] # accumulate list of intersection events
             for track in self.tracker.tracks:
                 i = track.track_id
-                lbl = track.get_label()
+                lbl, conf = track.get_label(return_confidence=True)
                 if not track.is_confirmed() or track.time_since_update > 1:
                     # track was not updated this frame, or it was not confirmed
                     continue
@@ -949,7 +950,7 @@ class Pipeline:
                     annot = lbl
                 else:
                     annot = ''
-                elements.append(TrackedObject(bbox, annot, lbl, track.track_id))
+                elements.append(TrackedObject(bbox, annot, lbl, conf, track.track_id))
 
                 if self.cam is not None and self.topdownview is not None:
                     # Add to top-down view using cameratransform

@@ -151,12 +151,13 @@ class Track:
         self.dist[detection.label].append(detection.confidence)
         self.detections.append(detection)
 
-    def get_label(self):
+    def get_label(self, return_confidence=False):
         # the label of a track is designated as the most commonly
         # identified object associated with the track (with one
         # exception)
         if not self.labels:
-            return None
+            if return_confidence: return None, 0
+            else: return None
         else:
             # Workaround for poor object recognition of motorbikes vs bicycles.
             #
@@ -177,11 +178,14 @@ class Track:
                 if expected[0][1] == 'motorbike' and expected[1][1] == 'bicycle':
                     # if probability of motorbike greatly exceeds that of bicycle
                     if expected[0][0] > expected[1][0] * factor:
-                        return 'motorbike'
+                        if return_confidence: return 'motorbike', np.average(self.dist['motorbike'])
+                        else: return 'motorbike'
                     else:
-                        return 'bicycle'
+                        if return_confidence: return 'bicycle', np.average(self.dist['bicycle'])
+                        else: return 'bicycle'
             # otherwise, use most likely
-            return expected[0][1]
+            if return_confidence: return expected[0][1], np.average(self.dist[expected[0][1]])
+            else: return expected[0][1]
 
     def mark_missed(self):
         """Mark this track as missed (no association at the current time step).
