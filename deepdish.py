@@ -662,7 +662,9 @@ class Pipeline:
         self.cameracountline = self.countline.astype(float)
 
     def init_output(self, output):
-        if self.args.disable_graphics: return
+        if self.args.disable_graphics:
+            self.output = None
+            return
         self.color_mode = None # fixme
         fourcc = cv2.VideoWriter_fourcc(*'MP4V')
         if self.cap is not None:
@@ -1157,7 +1159,8 @@ class Pipeline:
                         break
 
         finally:
-            self.output.release()
+            if self.output:
+                self.output.release()
 
     def check_deleted_track(self, track):
         i = track.track_id
