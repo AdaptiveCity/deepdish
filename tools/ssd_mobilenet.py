@@ -193,6 +193,8 @@ class SSD_MOBILENET():
     self.score_threshold = score_threshold
     self.labels = self.ssdm.labels
     self.width, self.height = self.ssdm.width, self.ssdm.height
+    self.use_edgetpu = self.ssdm.use_edgetpu
+    self.num_threads = self.ssdm.num_threads
 
   def detect_image(self, img):
     #t0 = time.time()
