@@ -4,6 +4,7 @@
 from __future__ import division, print_function, absolute_import
 
 import os
+import platform
 import re
 import io
 import psutil
@@ -604,7 +605,7 @@ class Pipeline:
 
     async def init_mqtt(self):
         if self.args.mqtt_broker is not None:
-            self.mqtt = MQTTClient('deepdish')
+            self.mqtt = MQTTClient('deepdish-'+platform.node())
             if self.topic is None:
                 self.topic = 'default/topic'
             self.mqtt_connect_event = asyncio.Event()
