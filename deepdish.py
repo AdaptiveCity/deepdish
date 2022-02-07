@@ -585,7 +585,8 @@ class Pipeline:
         self.mqtt_connect_event.set()
         if self.args.mqtt_verbosity > 1:
             payload = {'acp_ts': str(time()), 'acp_event': 'initialisation',
-                       'model': self.args.model, 'encoder_model': self.args.encoder_model,
+                       'model': self.args.model, 'model_class': type(self.object_detector).__name__,
+                       'encoder_model': self.args.encoder_model, 'encoder_model_class': type(self.encoder.image_encoder).__name__,
                        'input': self.input,
                        'use_edgetpu': self.object_detector.use_edgetpu,
                        'input_shape': [self.object_detector.width, self.object_detector.height],
