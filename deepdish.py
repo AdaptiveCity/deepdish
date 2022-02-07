@@ -1029,7 +1029,7 @@ class Pipeline:
         while True:
             temp = await self.get_cpu_temp()
             if self.mqtt is not None and self.args.mqtt_verbosity > 0:
-                payload = {'acp_ts': str(time()), 'acp_id': self.mqtt_acp_id, 'temp': temp}
+                payload = {'acp_ts': str(time()), 'acp_id': self.mqtt_acp_id, 'acp_event': 'heartbeat', 'temp': temp}
                 async with self.data_lock:
                     self.update_payload_with_state(payload)
                 self.mqtt.publish(self.topic, json.dumps(payload))
