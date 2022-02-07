@@ -1109,7 +1109,8 @@ class Pipeline:
     async def render_output(self, q_in):
         (output_w, output_h) = self.input_size
         ratio = 1 #fixme
-        render = RenderInfo(ratio, FontLib(output_w), self.draw, self.backbuf)
+        if not self.args.disable_graphics:
+            render = RenderInfo(ratio, FontLib(output_w), self.draw, self.backbuf)
 
         try:
             while self.running:
