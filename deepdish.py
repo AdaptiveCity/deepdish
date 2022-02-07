@@ -1170,10 +1170,10 @@ class Pipeline:
     async def start(self):
         self.running = True
         cameraQueue = FreshQueue()
-        objectQueue = asyncio.Queue(maxsize=2)
-        detectionQueue = asyncio.Queue(maxsize=2)
-        resultQueue = asyncio.Queue(maxsize=2)
-        drawQueue = asyncio.Queue(maxsize=2)
+        objectQueue = asyncio.Queue()
+        detectionQueue = asyncio.Queue()
+        resultQueue = asyncio.Queue()
+        drawQueue = asyncio.Queue()
         self.queues = [cameraQueue, objectQueue, detectionQueue, resultQueue, drawQueue]
 
         render_task = asyncio.ensure_future(self.render_output(drawQueue))
