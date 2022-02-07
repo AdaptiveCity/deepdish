@@ -171,7 +171,8 @@ class ObjectDetector:
         self._OUTPUT_NUMBER_NAME: sorted_output_indices[3],
     }
 
-    self._input_size = input_detail['shape'][2], input_detail['shape'][1]
+    l = input_detail['shape'].tolist()
+    self._input_size = l[2], l[1]
     self._is_quantized_input = input_detail['dtype'] == np.uint8
     self._interpreter = interpreter
     self._options = options
