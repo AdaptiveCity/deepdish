@@ -6,6 +6,7 @@ from __future__ import division, print_function, absolute_import
 import os
 import re
 import io
+import psutil
 from timeit import time
 from time import time, asctime, localtime
 import warnings
@@ -223,7 +224,7 @@ class FrameInfo:
             elif isinstance(e, TempInfo):
                 handle.write(' temp={:.0f}C'.format(e.temp))
             elif isinstance(e, PipelineInfo):
-                handle.write(' pipe={}'.format(e.count))
+                handle.write(' pipe={} cpup={:.0f}%'.format(e.count, e.cpup))
         handle.write('\n')
 
     def do_json(self, json):
@@ -250,14 +251,16 @@ class TempInfo:
         json['temp']=self.temp
 
 class PipelineInfo:
-    def __init__(self, count, qsizes):
+    def __init__(self, count, qsizes, cpup):
         self.count = count
         self.priority = 3
         self.qsizes = qsizes
+        self.cpup = cpup # cpu %
 
     def do_json(self, json):
         json['pipe']=self.count
         json['qsizes']=self.qsizes
+        json['cpup']=self.cpup
 
 # A detected object - simply the information conveyed by the object detector
 class DetectedObject:
@@ -405,6 +408,9 @@ class Pipeline:
 
     def __init__(self, args):
         self.args = args
+
+        # Track the current process
+        self.process = psutil.Process()
 
         # Initialise camera & camera viewport
         self.init_camera()
@@ -1137,7 +1143,8 @@ class Pipeline:
 
                 await (self.pipeline_sem.acquire())
                 frames_in_flight = self.pipeline_sem._value
-                elements.append(PipelineInfo(frames_in_flight, [q.qsize() for q in self.queues]))
+                cpup = self.process.cpu_percent()
+                elements.append(PipelineInfo(frames_in_flight, [q.qsize() for q in self.queues], cpup))
 
                 self.text_output(sys.stdout, elements)
 
@@ -1178,6 +1185,7 @@ class Pipeline:
         box = MBox()
         capthread = threading.Thread(target=capthread_f, args=(self.cap,box,self.everyframe), daemon=True)
         capthread.start()
+        self.process.cpu_percent() # take first 'dummy reading' to start monitoring
         await self.capture(cameraQueue, box)
         await render_task
         self.shutdown()
