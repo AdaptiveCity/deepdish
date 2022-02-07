@@ -662,6 +662,7 @@ class Pipeline:
         self.cameracountline = self.countline.astype(float)
 
     def init_output(self, output):
+        if self.args.disable_graphics: return
         self.color_mode = None # fixme
         fourcc = cv2.VideoWriter_fourcc(*'MP4V')
         if self.cap is not None:
