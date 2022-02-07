@@ -584,7 +584,7 @@ class Pipeline:
     def on_mqtt_connect(self, client, flags, rc, properties):
         self.mqtt_connect_event.set()
         if self.args.mqtt_verbosity > 1:
-            payload = {'acp_ts': str(time()), 'acp_event': 'initialisation',
+            payload = {'acp_ts': str(time()), 'acp_event': 'initialisation', 'acp_id': self.mqtt_acp_id,
                        'model': self.args.model, 'model_class': type(self.object_detector).__name__,
                        'encoder_model': self.args.encoder_model, 'encoder_model_class': type(self.encoder.image_encoder).__name__,
                        'input': self.input,
@@ -717,7 +717,7 @@ class Pipeline:
         if self.mqtt:
             print('Shutting down MQTT client.')
             if self.args.mqtt_verbosity > 1:
-                payload = {'acp_ts': str(time()), 'acp_event': 'shutdown', 'model': self.args.model, 'input': self.input}
+                payload = {'acp_ts': str(time()), 'acp_event': 'shutdown', 'acp_id': self.mqtt_acp_id, 'model': self.args.model, 'input': self.input}
                 self.mqtt.publish(self.topic, json.dumps(payload))
         print('Shutting down Quart server.')
         shutdown_event.set()
@@ -1092,7 +1092,7 @@ class Pipeline:
 
         # per-frame MQTT messages if enabled
         if self.mqtt and self.args.mqtt_verbosity > 1:
-            payload = {'acp_event': 'frame'}
+            payload = {'acp_event': 'frame', 'acp_id': self.mqtt_acp_id}
             for e in elements:
                 if hasattr(e, 'do_json'):
                     e.do_json(payload)
