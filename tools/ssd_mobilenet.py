@@ -39,8 +39,7 @@ class SSDMobileNet:
     self.use_edgetpu = edgetpu
     self.num_threads = num_threads
     self.input_details = self.interpreter.get_input_details()
-    self.height = self.input_details[0]['shape'][1]
-    self.width = self.input_details[0]['shape'][2]
+    _, self.height, self.width, _ = self.input_details[0]['shape'].tolist()
     self.labels = self.load_labels(label_path)
 
   def load_labels(self,path):
