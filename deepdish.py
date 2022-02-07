@@ -1182,8 +1182,37 @@ class Pipeline:
         await render_task
         self.shutdown()
 
+def quoted_split(s):
+    def strip_quotes(s):
+        if s and (s[0] == '"' or s[0] == "'") and s[0] == s[-1]:
+            return s[1:-1]
+        return s
+    return [strip_quotes(p).replace('\\"', '"').replace("\\'", "'") \
+            for p in re.findall(r'(?:[^"\s]*"(?:\\.|[^"])*"[^"\s]*)+|(?:[^\'\s]*\'(?:\\.|[^\'])*\'[^\'\s]*)+|[^\s]+', s)]
+
 def get_arguments():
     basedir = os.getenv('DEEPDISHHOME','.')
+    optfileparser = argparse.ArgumentParser()
+    optfileparser.add_argument('--options-file', help="Read some command-line options from file also.",
+                               metavar='FILE', action='append', default=None)
+    argv = sys.argv[1:]
+    optfiles = []
+    while True:
+        print(argv)
+        (optfileargs, argv2) = optfileparser.parse_known_args(args=argv)
+        if optfileargs.options_file:
+            argv1 = []
+            for n in optfileargs.options_file:
+                if n not in optfiles: # prevent infinite loops of includes
+                    optfiles.append(n)
+                    with open(n) as f:
+                        contents = f.read()
+                    argv1.extend(quoted_split(contents))
+            argv1.extend(argv2)
+            argv = argv1
+        else:
+            argv = argv2
+            break
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--camera', help="camera number for live input (OpenCV numbering)",
@@ -1202,17 +1231,14 @@ def get_arguments():
                         default=None)
     parser.add_argument('--line', '-L', help="counting line: x1,y1,x2,y2",
                         default=None)
-    parser.add_argument('--model', help='File path of object detection .tflite file.',
-                        required=True)
+    parser.add_argument('--model', help='Path to object detection file or directory.', metavar='FILE', required=True)
     parser.add_argument('--disable-edgetpu', help='Disable any usage of Edge TPU accelerator altogether.',
                         default=False, action='store_true')
-    parser.add_argument('--encoder-model', help='File path of feature encoder .pb file.',
-                        required=False)
+    parser.add_argument('--encoder-model', help='Path to feature encoder file.', metavar='FILE')
     parser.add_argument('--encoder-batch-size', help='Batch size for feature encoder inference',
                         default=32, type=int, metavar='N')
-    parser.add_argument('--labels', help='File path of labels file.', metavar='FILE', default=None, required=False)
-    parser.add_argument('--framebuffer', help='Enable framebuffer display',
-                        required=False, action='store_true')
+    parser.add_argument('--labels', help='Path to labels file.', metavar='FILE', default=None)
+    parser.add_argument('--framebuffer', help='Enable framebuffer display', default=False, action='store_true')
     parser.add_argument('--framebuffer-device', '-F', help='Framebuffer device',
                         default='/dev/fb0', metavar='DEVICE')
     parser.add_argument('--framebuffer-width', help='Framebuffer device resolution (width) override',
@@ -1296,7 +1322,8 @@ def get_arguments():
     parser.add_argument('--topdownview-size-m', help='X,Y in metres describing top-down view of area covered by camera.', default=None, metavar='X,Y')
     parser.add_argument('--3d', help='Toggle 3-D perspective unprojection transformation', default=False, action='store_true',dest='three_d')
     parser.add_argument('--raw-output', help='Only output raw video frames without any further drawing on them.', default=False, action='store_true')
-    args = parser.parse_args()
+
+    args = parser.parse_args(args=argv)
 
     if args.deepsorthome is None:
         args.deepsorthome = basedir
