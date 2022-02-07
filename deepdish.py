@@ -468,7 +468,7 @@ class Pipeline:
         else:
             model_filename = os.path.join(self.args.deepsorthome, self.args.encoder_model)
 
-        self.encoder = gdet.create_box_encoder(model_filename,batch_size=self.args.encoder_batch_size)
+        self.encoder = gdet.create_box_encoder(model_filename, batch_size=self.args.encoder_batch_size, num_threads=self.args.num_threads)
 
         self.background_subtraction = not self.args.disable_background_subtraction
 
