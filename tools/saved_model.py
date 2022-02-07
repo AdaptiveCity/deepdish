@@ -20,6 +20,13 @@ class SAVED_MODEL:
         self.score_threshold = score_threshold
         self.labels = self._get_labels()
         self.detect_fn = tf.saved_model.load(model_file)
+        self.use_edgetpu = False
+        self.num_threads = 1
+        if 'serving_default' in self.detect_fn.signatures:
+            s = 'serving_default'
+        else:
+            s = [k for k in self.detect_fn.signatures.keys()][0]
+        _, self.height, self.width, _ = self.detect_fn.signatures[s].inputs[0].shape
 
     def _get_labels(self):
         # object_detection package deps are broken - use imported code for time being

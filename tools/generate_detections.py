@@ -107,6 +107,7 @@ class ImageEncoder(object):
         assert self.concrete_func.inputs[0].shape.rank == 4
         self.feature_dim = self.concrete_func.outputs[0].shape.as_list()[-1]
         self.image_shape = self.concrete_func.inputs[0].shape.as_list()[1:]
+        self.height, self.width, _ = self.image_shape.tolist()
 
     def __call__(self, data_in, batch_size=32):
         out = np.zeros((len(data_in), self.feature_dim), np.float32)
@@ -123,6 +124,7 @@ class TFLiteImageEncoder(object):
         self.input_tensor_index = self.input_detail['index']
         self.output_tensor_index = self.output_detail['index']
         self.image_shape = self.input_detail['shape'][1:]
+        self.height, self.width, _ = self.image_shape.tolist()
         self.feature_dim = 128
         self.max_batch_size = 1
 
@@ -161,6 +163,8 @@ def create_box_encoder(model_filename, input_name="images",
         image_patches = np.asarray(image_patches)
         return image_encoder(image_patches, batch_size)
 
+    encoder.image_encoder = image_encoder
+    encoder.width, encoder.height = image_encoder.width, image_encoder.height
     return encoder
 
 

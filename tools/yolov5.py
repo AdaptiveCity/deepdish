@@ -73,7 +73,7 @@ class YOLOV5:
                 num_threads=num_threads,
                 experimental_delegates=[load_delegate(libedgetpu)] if self.use_edgetpu else None)
             self.interpreter.allocate_tensors()
-
+            self.num_threads = num_threads
             # Get input and output tensors.
             self.input_details = self.interpreter.get_input_details()
             self.output_details = self.interpreter.get_output_details()
@@ -81,6 +81,7 @@ class YOLOV5:
             self.width = self.input_details[0]['shape'][2]
         elif self.mode == 'saved_model':
             self.model = keras.models.load_model(model_file)
+            self.num_threads = 1
             _, self.height, self.width, _ = self.model.inputs[0].shape.as_list()
 
         yaml_file = Path(self.cfg_file)

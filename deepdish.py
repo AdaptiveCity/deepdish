@@ -584,7 +584,14 @@ class Pipeline:
     def on_mqtt_connect(self, client, flags, rc, properties):
         self.mqtt_connect_event.set()
         if self.args.mqtt_verbosity > 1:
-            payload = {'acp_ts': str(time()), 'acp_event': 'initialisation', 'model': self.args.model, 'input': self.input}
+            payload = {'acp_ts': str(time()), 'acp_event': 'initialisation',
+                       'model': self.args.model, 'encoder_model': self.args.encoder_model,
+                       'input': self.input,
+                       'use_edgetpu': self.object_detector.use_edgetpu,
+                       'input_shape': [self.object_detector.width, self.object_detector.height],
+                       'encoder_input_shape': [self.encoder.width, self.encoder.height],
+                       'num_threads': self.object_detector.num_threads
+                       }
             self.mqtt.publish(self.topic, json.dumps(payload))
 
     async def init_mqtt(self):

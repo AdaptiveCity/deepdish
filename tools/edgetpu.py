@@ -7,6 +7,8 @@ class EDGETPU():
       model_file = 'detectors/mobilenet/ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite'
     if label_file is None:
       label_file = 'detectors/mobilenet/labels.txt'
+    self.use_edgetpu = True
+    self.num_threads = 1
     self.engine = DetectionEngine(model_file)
     self.labels = dataset_utils.ReadLabelFile(label_file)
     if wanted_labels is None:

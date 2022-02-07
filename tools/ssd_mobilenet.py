@@ -36,6 +36,8 @@ class SSDMobileNet:
     else:
       self.interpreter = Interpreter(model_path, num_threads=num_threads)
     self.interpreter.allocate_tensors()
+    self.use_edgetpu = edgetpu
+    self.num_threads = num_threads
     self.input_details = self.interpreter.get_input_details()
     self.height = self.input_details[0]['shape'][1]
     self.width = self.input_details[0]['shape'][2]
@@ -190,6 +192,7 @@ class SSD_MOBILENET():
     self.wanted_labels = wanted_labels
     self.score_threshold = score_threshold
     self.labels = self.ssdm.labels
+    self.width, self.height = self.ssdm.width, self.ssdm.height
 
   def detect_image(self, img):
     #t0 = time.time()

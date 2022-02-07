@@ -153,6 +153,8 @@ def letterbox_image(image, size):
 class YOLO(object):
     def __init__(self,wanted_labels=None,model_file=None,label_file=None,num_threads=None,score_threshold=0.5):
         basedir = os.getenv('DEEPDISHHOME','.')
+        self.use_edgetpu = False
+        self.num_threads = 1
         self.model_path = '{}/detectors/yolo/yolo.h5'.format(basedir)
         self.model = load_model(self.model_path)
         self.anchors = [[116,90, 156,198, 373,326], [30,61, 62,45, 59,119], [10,13, 16,30, 33,23]]
@@ -170,6 +172,7 @@ class YOLO(object):
         self.iou = 0.5
         #self.sess = K.get_session()
         self.model_image_size = (416, 416) # fixed size or (None, None)
+        self.height, self.width = self.model_image_size
         self.is_fixed_size = self.model_image_size != (None, None)
         #self.boxes, self.scores, self.classes = self.generate()
         if wanted_labels is None:

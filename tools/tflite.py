@@ -12,6 +12,8 @@ class TFLITE:
             num_threads=num_threads or 1,
             score_threshold=score_threshold,
             enable_edgetpu=edgetpu)
+        self.use_edgetpu = edgetpu
+        self.num_threads = num_threads or 1
         self.detector = ObjectDetector(model_path=model_file, options=self.opts)
         if wanted_labels is None:
             wanted_labels = ['person']
@@ -19,6 +21,7 @@ class TFLITE:
         self.label_list = self.detector._label_list
         # self.labels is used externally by deepdish
         self.labels = {i+1: self.label_list[i] for i in range(0, len(self.label_list))}
+        self.width, self.height = self.detector.input_size
 
     def detect_image(self, img):
         dets = self.detector.detect(np.array(img)[...,:3])
