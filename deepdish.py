@@ -1198,7 +1198,6 @@ def get_arguments():
     argv = sys.argv[1:]
     optfiles = []
     while True:
-        print(argv)
         (optfileargs, argv2) = optfileparser.parse_known_args(args=argv)
         if optfileargs.options_file:
             argv1 = []
@@ -1206,8 +1205,9 @@ def get_arguments():
                 if n not in optfiles: # prevent infinite loops of includes
                     optfiles.append(n)
                     with open(n) as f:
-                        contents = f.read()
-                    argv1.extend(quoted_split(contents))
+                        lines = [quoted_split(l) for l in f.readlines() if l.strip()[0] != '#']
+                    for l in lines:
+                        argv1.extend(l)
             argv1.extend(argv2)
             argv = argv1
         else:
