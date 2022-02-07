@@ -77,8 +77,7 @@ class YOLOV5:
             # Get input and output tensors.
             self.input_details = self.interpreter.get_input_details()
             self.output_details = self.interpreter.get_output_details()
-            self.height = self.input_details[0]['shape'][1]
-            self.width = self.input_details[0]['shape'][2]
+            _, self.height, self.width, _ = self.input_details[0]['shape'].tolist()
         elif self.mode == 'saved_model':
             self.model = keras.models.load_model(model_file)
             self.num_threads = 1
