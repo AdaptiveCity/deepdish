@@ -21,7 +21,7 @@ class TFLITE:
         self.label_list = self.detector._label_list
         # self.labels is used externally by deepdish
         self.labels = {i+1: self.label_list[i] for i in range(0, len(self.label_list))}
-        self.width, self.height = self.detector.input_size
+        self.width, self.height = self.detector._input_size
 
     def detect_image(self, img):
         dets = self.detector.detect(np.array(img)[...,:3])
