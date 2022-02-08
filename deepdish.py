@@ -599,7 +599,13 @@ class Pipeline:
                        'use_edgetpu': self.object_detector.use_edgetpu,
                        'input_shape': [self.object_detector.width, self.object_detector.height],
                        'encoder_input_shape': [self.encoder.width, self.encoder.height],
-                       'num_threads': self.object_detector.num_threads
+                       'num_threads': self.object_detector.num_threads,
+                       'max_age': self.args.max_age,
+                       'max_iou_distance': self.args.max_iou_distance,
+                       'nms_max_overlap': self.args.nms_max_overlap,
+                       'max_cosine_distance': self.args.max_cosine_distance,
+                       'background_subtraction': None if self.args.disable_background_subtraction else self.args.background_subtraction_ratio,
+                       'powersaving': None if self.args.disable_powersaving else (self.args.powersave_delay_increment, self.args.powersave_delay_maximum)
                        }
             self.mqtt.publish(self.topic, json.dumps(payload))
 
