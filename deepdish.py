@@ -252,16 +252,18 @@ class TempInfo:
         json['temp']=self.temp
 
 class PipelineInfo:
-    def __init__(self, count, qsizes, cpup):
+    def __init__(self, count, qsizes, cpup, freq):
         self.count = count
         self.priority = 3
         self.qsizes = qsizes
         self.cpup = cpup # cpu %
+        self.freq = freq # cpu freq
 
     def do_json(self, json):
         json['pipe']=self.count
         json['qsizes']=self.qsizes
         json['cpup']=self.cpup
+        json['freq']=self.freq
 
 # A detected object - simply the information conveyed by the object detector
 class DetectedObject:
@@ -527,6 +529,19 @@ class Pipeline:
         self.cpu_temp_file = '/sys/class/thermal/thermal_zone0/temp'
         if self.args.cpu_temp_file is not None:
             self.cpu_temp_file = self.args.cpu_temp_file
+        if not os.path.exists(self.cpu_temp_file):
+            self.cpu_temp_file = None
+
+        self.cpu_freq_file = '/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq'
+        if self.args.cpu_freq_file is not None:
+            self.cpu_freq_file = self.args.cpu_freq_file
+        if not os.path.exists(self.cpu_freq_file):
+            self.cpu_freq_file = None
+            self.cpu_gov_file = None
+        else:
+            self.cpu_gov_file = os.path.join(os.path.dirname(self.cpu_freq_file), 'scaling_governor')
+            if not os.path.exists(self.cpu_gov_file):
+                self.cpu_gov_file = None
 
         self.powersave_delay = 0
         self.powersave_delay_maximum = float(self.args.powersave_delay_maximum) / 1000.0
@@ -605,11 +620,13 @@ class Pipeline:
                        'nms_max_overlap': self.args.nms_max_overlap,
                        'max_cosine_distance': self.args.max_cosine_distance,
                        'background_subtraction': None if self.args.disable_background_subtraction else self.args.background_subtraction_ratio,
-                       'powersaving': None if self.args.disable_powersaving else (self.args.powersave_delay_increment, self.args.powersave_delay_maximum)
+                       'powersaving': None if self.args.disable_powersaving else (self.args.powersave_delay_increment, self.args.powersave_delay_maximum),
+                       'governor': self.cpu_governor
                        }
             self.mqtt.publish(self.topic, json.dumps(payload))
 
     async def init_mqtt(self):
+        self.cpu_governor = await self.get_cpu_governor() # only used in MQTT messages anyway
         if self.args.mqtt_broker is not None:
             self.mqtt = MQTTClient('deepdish-'+platform.node())
             if self.topic is None:
@@ -740,10 +757,24 @@ class Pipeline:
         shutdown_event.set()
 
     async def get_cpu_temp(self):
+        if not self.cpu_temp_file: return None
         async with aiofiles.open(self.cpu_temp_file, mode='r') as f:
             line = await f.read()
             temp = float(line)
             return temp/1000
+
+    async def get_cpu_freq(self):
+        if not self.cpu_freq_file: return None
+        async with aiofiles.open(self.cpu_freq_file, mode='r') as f:
+            line = await f.read()
+            freq = int(line)
+            return freq
+
+    async def get_cpu_governor(self):
+        if not self.cpu_gov_file: return None
+        async with aiofiles.open(self.cpu_gov_file, mode='r') as f:
+            gov = await f.read()
+            return gov
 
     async def capture(self, q, box):
         try:
@@ -1156,7 +1187,8 @@ class Pipeline:
                 await (self.pipeline_sem.acquire())
                 frames_in_flight = self.pipeline_sem._value
                 cpup = self.process.cpu_percent()
-                elements.append(PipelineInfo(frames_in_flight, [q.qsize() for q in self.queues], cpup))
+                freq = await get_cpu_freq()
+                elements.append(PipelineInfo(frames_in_flight, [q.qsize() for q in self.queues], cpup, freq))
 
                 self.text_output(sys.stdout, elements)
 
@@ -1327,6 +1359,8 @@ def get_arguments():
     parser.add_argument('--object-annotation', help='The category of information to show with each detected object (options: ID, LABEL, NONE).',
                         default='LABEL', metavar='CATEGORY', choices=['ID','id','LABEL','label','NONE','none'])
     parser.add_argument('--cpu-temp-file', help='Specify system file to read CPU temperature from',
+                        default=None, metavar='FILE')
+    parser.add_argument('--cpu-freq-file', help='Specify system file to read CPU frequency from',
                         default=None, metavar='FILE')
     parser.add_argument('--disable-powersaving', help='Disable the insertion of powersaving delay into the pipeline.',
                         default=False, action='store_true')
