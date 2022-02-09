@@ -1261,10 +1261,11 @@ class Pipeline:
     async def start(self):
         self.running = True
         cameraQueue = FreshQueue()
-        objectQueue = asyncio.Queue(maxsize=1)
-        detectionQueue = asyncio.Queue(maxsize=1)
-        resultQueue = asyncio.Queue(maxsize=1)
-        drawQueue = asyncio.Queue(maxsize=1)
+        k = self.args.max_queue_size
+        objectQueue = asyncio.Queue(maxsize=k)
+        detectionQueue = asyncio.Queue(maxsize=k)
+        resultQueue = asyncio.Queue(maxsize=k)
+        drawQueue = asyncio.Queue(maxsize=k)
         self.queues = [cameraQueue, objectQueue, detectionQueue, resultQueue, drawQueue]
 
         render_task = asyncio.ensure_future(self.render_output(drawQueue))
@@ -1408,6 +1409,8 @@ def get_arguments():
                         default=None, metavar='MSECS', type=int)
     parser.add_argument('--object-detector-skip-frames', help='Static number of frames to skip in between invocations of object detector',
                         default=None, metavar='N', type=int)
+    parser.add_argument('--max-queue-size', help='Maximum size of the queues that communicate frames between co-routines internally.',
+                        default=5, metavar='N', type=int)
     parser.add_argument('--log', help='Log state of parameters in given file as JSON',
                         default=None, metavar='FILE')
     parser.add_argument('--restore-from-log', help='Restore parameters from last line of log file, if present',
