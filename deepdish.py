@@ -774,7 +774,7 @@ class Pipeline:
         if not self.cpu_gov_file: return None
         async with aiofiles.open(self.cpu_gov_file, mode='r') as f:
             gov = await f.read()
-            return gov
+            return gov.strip()
 
     async def capture(self, q, box):
         try:
