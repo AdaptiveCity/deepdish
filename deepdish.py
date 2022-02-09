@@ -9,7 +9,7 @@ import re
 import io
 import psutil
 from timeit import time
-from time import time, asctime, localtime
+from time import time, asctime, localtime, sleep
 import warnings
 import sys
 import argparse
@@ -89,9 +89,12 @@ class MBox:
         self.message = message
         self.lock.release()
 
-def capthread_f(cap, box, everyframe):
+def capthread_f(cap, kickstart, box, everyframe, interframe_delay):
     count = 0
+    # interframe_delay here is already converted to seconds
+    delay = interframe_delay
     try:
+        kickstart.wait()
         prev_t = time()
         ret = True
         while ret:
@@ -100,15 +103,24 @@ def capthread_f(cap, box, everyframe):
             if not ret:
               frame = None
             t2 = time()
+            capthread_delta_t = t2 - prev_t
             #print('{:.02f}ms'.format((t2-prev_t)*1000))
             prev_t = t2
             count += 1
-            box.set_message((frame,t2,t2-t1))
+            box.set_message((count,frame,t2,t2-t1))
             # If we are ensuring every frame is processed then wait for
             # synchronising event to be triggered
             if everyframe is not None:
                 everyframe.wait()
                 everyframe.clear()
+            elif interframe_delay is not None:
+                # Adjust 'delay' so that the measured capthread_delta_t approaches it
+                if capthread_delta_t < interframe_delay:
+                    delay+=0.001
+                elif capthread_delta_t > interframe_delay:
+                    delay-=0.001
+                #print('{:.02f}ms {:.02f}ms {:.02f}ms'.format(delay*1000, capthread_delta_t*1000, interframe_delay*1000))
+                sleep(delay)
     finally:
         cap.release()
 
@@ -666,7 +678,8 @@ class Pipeline:
             self.everyframe = None
         else:
             # Capture every frame from the video file in self.input
-            self.everyframe = threading.Event()
+            if self.args.interframe_delay is None:
+                self.everyframe = threading.Event()
             # Disable power-saving delay mechanism
             self.args.disable_powersaving = True
             self.powersave_delay_increment = 0
@@ -793,13 +806,13 @@ class Pipeline:
                     msg = box.get_message()
                     await asyncio.sleep(0.003) # cooperative yield
                     # note that .sleep(0) doesn't work right, causing severely inconsistent timings
-                (frame, t_frame, dt_cap) = msg
+                (orig_framenum, frame, t_frame, dt_cap) = msg
 
                 if self.everyframe:
                     box.set_message(None) # avoid repeating frames
 
                 if frame is None:
-                    self.final_frame = self.frame_count - 1
+                    self.final_frame = self.frame_count
                     break
 
                 if self.args.camera_flip:
@@ -809,7 +822,7 @@ class Pipeline:
                 frame = cv2.resize(frame, self.input_size)
 
                 # q is a 1-element FreshQueue that overwrites the existing element if there is one
-                q.put_nowait((frame, dt_cap, t_frame, time()))
+                q.put_nowait((orig_framenum, frame, dt_cap, t_frame, time()))
 
                 # slow down pipeline if trying to save power
                 if self.powersave_delay > 0:
@@ -830,12 +843,17 @@ class Pipeline:
         # Initialise background subtractor
         backSub = cv2.createBackgroundSubtractorMOG2()
 
+        # Feed some dummy data to warm-up the object detector
+        dummyframe = np.zeros((self.input_size[1], self.input_size[0], 3), dtype=np.uint8)
+        await self.loop.run_in_executor(None, self.run_object_detector, dummyframe)
+        # Now we're ready to start the capthread:
+        self.kickstart.set()
         while self.running:
             # Obtain next video frame
-            (frame, dt_cap, t_frame, t_prev) = await q_in.get()
+            (orig_framenum, frame, dt_cap, t_frame, t_prev) = await q_in.get()
             t_frame_recv = time()
-            framenum = self.frame_count
-            self.frame_count += 1 # prep for the next one
+            framenum = orig_framenum
+            self.frame_count = orig_framenum
             # Frame num. 'framenum' begins its journey through the pipeline here
             self.pipeline_sem.release()
 
@@ -1227,8 +1245,14 @@ class Pipeline:
         asyncio.ensure_future(self.encode_features(objectQueue, detectionQueue))
         asyncio.ensure_future(self.detect_objects(cameraQueue, objectQueue))
 
+        # Box that holds frame data and info for communication to main process
         box = MBox()
-        capthread = threading.Thread(target=capthread_f, args=(self.cap,box,self.everyframe), daemon=True)
+        # Event that kicks off the capture loop (only when pipeline is ready)
+        self.kickstart = threading.Event()
+        ifd = self.args.interframe_delay
+        if ifd is not None: self.everyframe = None
+        ifd_sec = float(ifd)/1000.0
+        capthread = threading.Thread(target=capthread_f, args=(self.cap,self.kickstart,box,self.everyframe,ifd_sec), daemon=True)
         capthread.start()
         self.process.cpu_percent() # take first 'dummy reading' to start monitoring
         await self.capture(cameraQueue, box)
@@ -1352,6 +1376,8 @@ def get_arguments():
                         default=0.25, metavar='RATIO', type=float)
     parser.add_argument('--enable-background-masking', help='Enable masking of camera view with background subtraction',
                         default=False, action='store_true')
+    parser.add_argument('--interframe-delay', help='Milliseconds of delay to allow between each video frame; drop frames not processed in time',
+                        default=None, metavar='MSECS', type=int)
     parser.add_argument('--log', help='Log state of parameters in given file as JSON',
                         default=None, metavar='FILE')
     parser.add_argument('--restore-from-log', help='Restore parameters from last line of log file, if present',
