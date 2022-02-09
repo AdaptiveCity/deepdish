@@ -621,7 +621,7 @@ class Pipeline:
                        'max_cosine_distance': self.args.max_cosine_distance,
                        'background_subtraction': None if self.args.disable_background_subtraction else self.args.background_subtraction_ratio,
                        'powersaving': None if self.args.disable_powersaving else (self.args.powersave_delay_increment, self.args.powersave_delay_maximum),
-                       'governor': self.cpu_governor
+                       'cpu_governor': self.cpu_governor
                        }
             self.mqtt.publish(self.topic, json.dumps(payload))
 
@@ -1187,7 +1187,7 @@ class Pipeline:
                 await (self.pipeline_sem.acquire())
                 frames_in_flight = self.pipeline_sem._value
                 cpup = self.process.cpu_percent()
-                freq = await get_cpu_freq()
+                freq = await self.get_cpu_freq()
                 elements.append(PipelineInfo(frames_in_flight, [q.qsize() for q in self.queues], cpup, freq))
 
                 self.text_output(sys.stdout, elements)
