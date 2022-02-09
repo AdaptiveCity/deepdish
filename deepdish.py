@@ -847,9 +847,11 @@ class Pipeline:
         skip_rem = 0
         prev_objd_result = None
 
-        # Feed some dummy data to warm-up the object detector
+        # Feed some dummy data to warm-up the object detector and feature encoder
         dummyframe = np.zeros((self.input_size[1], self.input_size[0], 3), dtype=np.uint8)
         await self.loop.run_in_executor(None, self.run_object_detector, dummyframe)
+        await self.loop.run_in_executor(None, self.encoder, dummyframe, [(0, 0, self.encoder.width, self.encoder.height)])
+
         # Now we're ready to start the capthread:
         self.kickstart.set()
 
