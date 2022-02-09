@@ -113,7 +113,7 @@ def capthread_f(cap, kickstart, box, everyframe, interframe_delay):
             if everyframe is not None:
                 everyframe.wait()
                 everyframe.clear()
-            elif interframe_delay is not None:
+            elif interframe_delay is not None and frame is not None:
                 # Adjust 'delay' so that the measured capthread_delta_t approaches it
                 if capthread_delta_t < interframe_delay:
                     delay+=0.001
@@ -843,14 +843,23 @@ class Pipeline:
         # Initialise background subtractor
         backSub = cv2.createBackgroundSubtractorMOG2()
 
+        # Initialise vars for skipping a set number of frames between objd invocations:
+        skip_rem = 0
+        prev_objd_result = None
+
         # Feed some dummy data to warm-up the object detector
         dummyframe = np.zeros((self.input_size[1], self.input_size[0], 3), dtype=np.uint8)
         await self.loop.run_in_executor(None, self.run_object_detector, dummyframe)
         # Now we're ready to start the capthread:
         self.kickstart.set()
+
         while self.running:
             # Obtain next video frame
             (orig_framenum, frame, dt_cap, t_frame, t_prev) = await q_in.get()
+            if orig_framenum <= self.frame_count:
+                # We've already seen this frame
+                await asyncio.sleep(0.003) # cooperative yield
+                continue
             t_frame_recv = time()
             framenum = orig_framenum
             self.frame_count = orig_framenum
@@ -870,8 +879,16 @@ class Pipeline:
             #image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGRA2RGBA))
             t_backsub = time()
 
-            # Run object detection engine within a Thread Pool
-            (boxes0, labels0, scores0, delta_t) = await self.loop.run_in_executor(None, self.run_object_detector, frame)
+            if skip_rem > 0 and prev_objd_result is not None:
+                (boxes0, labels0, scores0, delta_t) = prev_objd_result
+                skip_rem-=1
+                objd_skipped = True
+            else:
+                # Run object detection engine within a Thread Pool
+                (boxes0, labels0, scores0, delta_t) = await self.loop.run_in_executor(None, self.run_object_detector, frame)
+                prev_objd_result = (boxes0, labels0, scores0, delta_t)
+                skip_rem = self.args.object_detector_skip_frames or 0
+                objd_skipped = False
 
             # Filter object detection boxes, including only those with areas of motion
             t1 = time()
@@ -912,8 +929,9 @@ class Pipeline:
                         TimingInfo('Frame return [Q0] latency', 'fram', t_prev - t_frame),
                         TimingInfo('Frame / Q1 item received latency', 'q1', t_frame_recv - t_prev),
                         #TimingInfo('Frame prep latency', 'prep', t_prep - t_frame_recv),
-                        TimingInfo('Background subtraction latency', 'bsub', t_backsub - t_frame_recv),
-                        TimingInfo('Object detection latency', 'objd', delta_t+(t2-t1))]
+                        TimingInfo('Background subtraction latency', 'bsub', t_backsub - t_frame_recv)]
+            if not objd_skipped:
+                elements.append(TimingInfo('Object detection latency', 'objd', delta_t+(t2-t1)))
             await q_out.put((frame, framenum, boxes, labels, scores, elements, time()))
 
     async def encode_features(self, q_in, q_out):
@@ -1172,7 +1190,15 @@ class Pipeline:
 
         try:
             while self.running:
-                (elements, t_prev) = await q_in.get()
+                try:
+                    (elements, t_prev) = await asyncio.wait_for(q_in.get(), 1)
+                except asyncio.TimeoutError:
+                    # workaround the race condition wherein
+                    # self.final_frame does not get set (in
+                    # capthread_f) before q_in.get() is called above
+                    if self.final_frame:
+                        break
+                    continue
 
                 t1 = time()
                 if not self.args.disable_graphics:
@@ -1378,6 +1404,8 @@ def get_arguments():
                         default=False, action='store_true')
     parser.add_argument('--interframe-delay', help='Milliseconds of delay to allow between each video frame; drop frames not processed in time',
                         default=None, metavar='MSECS', type=int)
+    parser.add_argument('--object-detector-skip-frames', help='Static number of frames to skip in between invocations of object detector',
+                        default=None, metavar='N', type=int)
     parser.add_argument('--log', help='Log state of parameters in given file as JSON',
                         default=None, metavar='FILE')
     parser.add_argument('--restore-from-log', help='Restore parameters from last line of log file, if present',
