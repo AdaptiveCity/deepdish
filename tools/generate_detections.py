@@ -25,15 +25,16 @@ except ImportError:
 def _run_in_batches(f, data_in, out, batch_size):
     data_len = len(out)
     num_batches = int(data_len / batch_size)
+    batch_data = np.zeros((batch_size,) + data_in.shape[1:])
 
     s, e = 0, 0
     for i in range(num_batches):
         s, e = i * batch_size, (i + 1) * batch_size
-        batch_data = data_in[s:e]
+        batch_data[0:] = data_in[s:e]
         out[s:e] = f(batch_data)
     if e < len(out):
-        batch_data = data_in[e:]
-        out[e:] = f(batch_data)
+        batch_data[0:(len(out)-e)] = data_in[e:]
+        out[e:] = f(batch_data)[0:(len(out)-e)]
 
 def extract_image_patch(image, bbox, patch_shape):
     """Extract image patch from bounding box.
@@ -107,7 +108,7 @@ class ImageEncoder(object):
         assert self.concrete_func.inputs[0].shape.rank == 4
         self.feature_dim = self.concrete_func.outputs[0].shape.as_list()[-1]
         self.image_shape = self.concrete_func.inputs[0].shape.as_list()[1:]
-        self.height, self.width, _ = self.image_shape.tolist()
+        self.height, self.width, _ = self.image_shape
 
     def __call__(self, data_in, batch_size=32):
         out = np.zeros((len(data_in), self.feature_dim), np.float32)
@@ -126,7 +127,7 @@ class TFLiteImageEncoder(object):
         self.image_shape = self.input_detail['shape'][1:]
         self.height, self.width, _ = self.image_shape.tolist()
         self.feature_dim = 128
-        self.max_batch_size = 1
+        self.max_batch_size = self.output_detail['shape'][0]
 
     def __call__(self, data_in, batch_size=1):
         out = np.zeros((len(data_in), self.feature_dim), np.float32)
@@ -137,7 +138,8 @@ class TFLiteImageEncoder(object):
             self.interpreter.invoke()
             return self.interpreter.get_tensor(self.output_tensor_index)
 
-        if batch_size > self.max_batch_size: batch_size = self.max_batch_size
+        if self.max_batch_size and batch_size > self.max_batch_size:
+            batch_size = self.max_batch_size
 
         _run_in_batches(_internal_fn, data_in, out, batch_size)
         return out
