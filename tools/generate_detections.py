@@ -182,7 +182,7 @@ def create_box_encoder(model_filename, input_name="images",
                        output_name="features", batch_size=32, num_threads=1):
     if 'dummy' in model_filename:
         image_encoder = DummyImageEncoder()
-    if 'constant' in model_filename:
+    elif 'constant' in model_filename:
         image_encoder = ConstantImageEncoder()
     elif 'tflite' in model_filename:
         image_encoder = TFLiteImageEncoder(model_filename, input_name, output_name, num_threads=num_threads)
