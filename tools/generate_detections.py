@@ -82,6 +82,27 @@ def extract_image_patch(image, bbox, patch_shape):
     image = cv2.resize(image, tuple(patch_shape[::-1]))
     return image
 
+class DummyImageEncoder(object):
+    def __init__(self):
+        self.height, self.width = 16, 8
+        self.image_shape = 16, 8, 3
+        self.feature_dim = 128
+
+    def __call__(self, data_in, batch_size=32):
+        mat = np.array(data_in,dtype=np.float32)
+
+        mat = np.average(mat, axis=3)
+        mat = mat.reshape((-1, 128))
+        mat = mat - 128
+        out = np.zeros(mat.shape,dtype=np.float32)
+        for i in range(mat.shape[0]):
+            l = np.sqrt(np.sum(mat[i]**2,axis=0))
+            if l == 0:
+                out[i] = mat[i]
+                out[i,0] = 1
+            else:
+                out[i] = mat[i]/l
+        return out
 
 class ImageEncoder(object):
 
@@ -147,7 +168,9 @@ class TFLiteImageEncoder(object):
 
 def create_box_encoder(model_filename, input_name="images",
                        output_name="features", batch_size=32, num_threads=1):
-    if 'tflite' in model_filename:
+    if 'dummy' in model_filename:
+        image_encoder = DummyImageEncoder()
+    elif 'tflite' in model_filename:
         image_encoder = TFLiteImageEncoder(model_filename, input_name, output_name, num_threads=num_threads)
     else:
         image_encoder = ImageEncoder(model_filename, input_name, output_name)
