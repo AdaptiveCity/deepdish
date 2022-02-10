@@ -105,6 +105,17 @@ class DummyImageEncoder(object):
                 out[i] = mat[i]/l
         return out
 
+class ConstantImageEncoder(object):
+    def __init__(self):
+        self.height, self.width = 16, 8
+        self.image_shape = 16, 8, 3
+        self.feature_dim = 128
+
+    def __call__(self, data_in, batch_size=32):
+        out = np.zeros((data_in.shape[0], 128),dtype=np.float32)
+        out[:,0] = 1
+        return out
+
 class ImageEncoder(object):
 
     def __init__(self, checkpoint_filename, input_name="images",
@@ -171,6 +182,8 @@ def create_box_encoder(model_filename, input_name="images",
                        output_name="features", batch_size=32, num_threads=1):
     if 'dummy' in model_filename:
         image_encoder = DummyImageEncoder()
+    if 'constant' in model_filename:
+        image_encoder = ConstantImageEncoder()
     elif 'tflite' in model_filename:
         image_encoder = TFLiteImageEncoder(model_filename, input_name, output_name, num_threads=num_threads)
     else:
