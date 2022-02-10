@@ -126,7 +126,7 @@ class TFLiteImageEncoder(object):
         self.output_tensor_index = self.output_detail['index']
         self.image_shape = self.input_detail['shape'][1:]
         self.height, self.width, _ = self.image_shape.tolist()
-        self.feature_dim = 128
+        self.feature_dim = self.output_detail['shape'][1]
         self.max_batch_size = self.output_detail['shape'][0]
 
     def __call__(self, data_in, batch_size=1):
