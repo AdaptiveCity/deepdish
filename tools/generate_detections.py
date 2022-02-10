@@ -1,4 +1,5 @@
 # vim: expandtab:ts=4:sw=4
+from time import time
 import os
 import errno
 import argparse
@@ -176,7 +177,7 @@ def create_box_encoder(model_filename, input_name="images",
         image_encoder = ImageEncoder(model_filename, input_name, output_name)
     image_shape = image_encoder.image_shape
 
-    def encoder(image, boxes):
+    def encoder(image, boxes, timing=False):
         image_patches = []
         for box in boxes:
             patch = extract_image_patch(image, box, image_shape[:2])
@@ -186,7 +187,13 @@ def create_box_encoder(model_filename, input_name="images",
                     0., 255., image_shape).astype(np.uint8)
             image_patches.append(patch)
         image_patches = np.asarray(image_patches)
-        return image_encoder(image_patches, batch_size)
+        t1 = time()
+        result = image_encoder(image_patches, batch_size)
+        t2 = time()
+        if timing:
+            return result, t2 - t1
+        else:
+            return result
 
     encoder.image_encoder = image_encoder
     encoder.width, encoder.height = image_encoder.width, image_encoder.height
