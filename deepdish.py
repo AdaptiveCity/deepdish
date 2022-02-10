@@ -633,7 +633,9 @@ class Pipeline:
                        'max_cosine_distance': self.args.max_cosine_distance,
                        'background_subtraction': None if self.args.disable_background_subtraction else self.args.background_subtraction_ratio,
                        'powersaving': None if self.args.disable_powersaving else (self.args.powersave_delay_increment, self.args.powersave_delay_maximum),
-                       'cpu_governor': self.cpu_governor
+                       'cpu_governor': self.cpu_governor,
+                       'object_detector_skip_frames': self.args.object_detector_skip_frames,
+                       'interframe_delay': self.args.interframe_delay
                        }
             self.mqtt.publish(self.topic, json.dumps(payload))
 
