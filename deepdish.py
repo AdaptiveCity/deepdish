@@ -1290,8 +1290,11 @@ class Pipeline:
         # Event that kicks off the capture loop (only when pipeline is ready)
         self.kickstart = threading.Event()
         ifd = self.args.interframe_delay
-        if ifd is not None: self.everyframe = None
-        ifd_sec = float(ifd)/1000.0
+        if ifd is not None:
+            self.everyframe = None
+            ifd_sec = float(ifd)/1000.0
+        else:
+            ifd_sec = None
         capthread = threading.Thread(target=capthread_f, args=(self.cap,self.kickstart,box,self.everyframe,ifd_sec), daemon=True)
         capthread.start()
         self.process.cpu_percent() # take first 'dummy reading' to start monitoring
