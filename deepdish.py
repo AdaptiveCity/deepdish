@@ -934,13 +934,14 @@ class Pipeline:
                         TimingInfo('Background subtraction latency', 'bsub', t_backsub - t_frame_recv)]
             if not objd_skipped:
                 elements.append(TimingInfo('Object detection latency', 'objd', delta_t+(t2-t1)))
-            await q_out.put((frame, framenum, boxes, labels, scores, elements, time()))
+            await q_out.put((frame, framenum, boxes, labels, scores, objd_skipped, elements, time()))
 
     async def encode_features(self, q_in, q_out):
         with concurrent.futures.ThreadPoolExecutor() as pool:
+            prev_features = None
             while self.running:
                 # Obtain next video frame and object detection boxes
-                (frame, framenum, boxes, labels, scores, elements, t_prev) = await q_in.get()
+                (frame, framenum, boxes, labels, scores, objd_skipped, elements, t_prev) = await q_in.get()
 
                 t1 = time()
                 # Run non-max suppression to eliminate spurious boxes
@@ -954,8 +955,14 @@ class Pipeline:
                 # Consider and modify boxes based on info contained in the frame record
                 boxesA2, labels2, scoresA2 = self.framerec.process_boxes(framenum, boxesA1, labels1, scoresA1)
 
-                # Run feature encoder within a Thread Pool
-                features = await self.loop.run_in_executor(pool, self.encoder, frame, boxesA2)
+                if objd_skipped and prev_features is not None:
+                    features = prev_features
+                    feat_skipped = True
+                else:
+                    # Run feature encoder within a Thread Pool
+                    features, ienc_dt = await self.loop.run_in_executor(pool, self.encoder, frame, boxesA2, True)
+                    prev_features = features
+                    feat_skipped = False
                 t2 = time()
 
                 # Build list of 'Detection' objects and send them to next step in pipeline
@@ -964,7 +971,9 @@ class Pipeline:
                 # Consider and modify detections based on info contained in the frame record
                 detections = self.framerec.process_detections(framenum, detections)
                 elements.append(TimingInfo('Q1 / Q2 latency', 'q2', (t1 - t_prev)))
-                elements.append(TimingInfo('Feature encoder latency', 'feat', (t2-t1)))
+                if not feat_skipped:
+                    elements.append(TimingInfo('Internal encoder latency', 'ienc', ienc_dt))
+                    elements.append(TimingInfo('Feature encoder latency', 'feat', (t2-t1)))
                 await q_out.put((framenum, detections, elements, time()))
 
     async def track_objects(self, q_in, q_out):
