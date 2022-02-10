@@ -91,7 +91,6 @@ class DummyImageEncoder(object):
 
     def __call__(self, data_in, batch_size=32):
         mat = np.array(data_in,dtype=np.float32)
-
         mat = np.average(mat, axis=3)
         mat = mat.reshape((-1, 128))
         mat = mat - 128
@@ -191,6 +190,11 @@ def create_box_encoder(model_filename, input_name="images",
     image_shape = image_encoder.image_shape
 
     def encoder(image, boxes, timing=False):
+        if not boxes:
+            if timing:
+                return np.array([]), 0
+            else:
+                return np.array([])
         image_patches = []
         for box in boxes:
             patch = extract_image_patch(image, box, image_shape[:2])
