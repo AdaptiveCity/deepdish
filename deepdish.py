@@ -120,6 +120,7 @@ def capthread_f(cap, kickstart, box, everyframe, interframe_delay):
                 elif capthread_delta_t > interframe_delay:
                     delay-=0.001
                 #print('{:.02f}ms {:.02f}ms {:.02f}ms'.format(delay*1000, capthread_delta_t*1000, interframe_delay*1000))
+                delay = max(0, delay)
                 sleep(delay)
     finally:
         cap.release()
