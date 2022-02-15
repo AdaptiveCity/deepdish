@@ -27,6 +27,9 @@ class SAVED_MODEL:
         else:
             s = [k for k in self.detect_fn.signatures.keys()][0]
         _, self.height, self.width, _ = self.detect_fn.signatures[s].inputs[0].shape
+        if not callable(self.detect_fn):
+            self.detect_image = self.detect_image_centernet_mobilenet
+            self.height, self.width = 320, 320
 
     def _get_labels(self):
         # object_detection package deps are broken - use imported code for time being
@@ -35,6 +38,35 @@ class SAVED_MODEL:
         # imported code:
         label_map = load_labelmap(self.label_file)
         return {e.id: e.display_name for e in label_map.ListFields()[0][1]}
+
+    def detect_image_centernet_mobilenet(self, img):
+        w, h = img.size
+        image_np = cv2.cvtColor(np.array(img), cv2.COLOR_BGR2RGB)
+        image_np = cv2.resize(image_np, (320, 320))
+        input_tensor = tf.convert_to_tensor(image_np, dtype=np.float32)
+        input_tensor = input_tensor[tf.newaxis, ...]
+        detections = self.detect_fn.inference_fn(input_tensor)
+        import pdb; pdb.set_trace()
+        num_detections = int(detections[0][0])
+        return_boxs = [] # List of (x, y, w, h) in image coordinates
+        return_lbls = [] # text labels (display names)
+        return_scrs = [] # scores from 0 to 1
+        for i in range(num_detections):
+            ymin, xmin, ymax, xmax = detections[3][0][i] # normalised range [0,1]
+            xywh = [int(xmin * w), int(ymin * h), int((xmax - xmin) * w), int((ymax - ymin) * h)]
+            cls = int(detections[2][0][i])+1
+            scr = float(detections[1][0][i])
+            if cls == 0:
+                continue
+            lbl = self.labels[cls]
+            if scr < self.score_threshold:
+                break
+            if lbl in self.wanted_labels:
+                return_boxs.append(xywh)
+                return_lbls.append(lbl)
+                return_scrs.append(scr)
+
+        return (return_boxs, return_lbls, return_scrs)
 
     def detect_image(self, img):
         w, h = img.size

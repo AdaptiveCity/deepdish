@@ -1451,7 +1451,7 @@ def get_arguments():
     parser.add_argument('--topdownview-size-m', help='X,Y in metres describing top-down view of area covered by camera.', default=None, metavar='X,Y')
     parser.add_argument('--3d', help='Toggle 3-D perspective unprojection transformation', default=False, action='store_true',dest='three_d')
     parser.add_argument('--raw-output', help='Only output raw video frames without any further drawing on them.', default=False, action='store_true')
-
+    parser.add_argument('--centernet-mobilenet', help='special mode for centernet-mobilenet.', default=False, action='store_true')
     args = parser.parse_args(args=argv)
 
     if args.deepsorthome is None:
