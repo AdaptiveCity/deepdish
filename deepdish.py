@@ -89,10 +89,10 @@ class MBox:
         self.message = message
         self.lock.release()
 
-def capthread_f(cap, kickstart, box, everyframe, interframe_delay):
+def capthread_f(cap, kickstart, box, everyframe, interframe_interval):
     count = 0
-    # interframe_delay here is already converted to seconds
-    delay = interframe_delay
+    # interframe_interval here is already converted to seconds
+    delay = interframe_interval
     try:
         kickstart.wait()
         prev_t = time()
@@ -113,13 +113,13 @@ def capthread_f(cap, kickstart, box, everyframe, interframe_delay):
             if everyframe is not None:
                 everyframe.wait()
                 everyframe.clear()
-            elif interframe_delay is not None and frame is not None:
+            elif interframe_interval is not None and frame is not None:
                 # Adjust 'delay' so that the measured capthread_delta_t approaches it
-                if capthread_delta_t < interframe_delay:
+                if capthread_delta_t < interframe_interval:
                     delay+=0.001
-                elif capthread_delta_t > interframe_delay:
+                elif capthread_delta_t > interframe_interval:
                     delay-=0.001
-                #print('{:.02f}ms {:.02f}ms {:.02f}ms'.format(delay*1000, capthread_delta_t*1000, interframe_delay*1000))
+                #print('{:.02f}ms {:.02f}ms {:.02f}ms'.format(delay*1000, capthread_delta_t*1000, interframe_interval*1000))
                 delay = max(0, delay)
                 sleep(delay)
     finally:
@@ -636,7 +636,7 @@ class Pipeline:
                        'powersaving': None if self.args.disable_powersaving else (self.args.powersave_delay_increment, self.args.powersave_delay_maximum),
                        'cpu_governor': self.cpu_governor,
                        'object_detector_skip_frames': self.args.object_detector_skip_frames,
-                       'interframe_delay': self.args.interframe_delay
+                       'interframe_interval': self.args.interframe_interval
                        }
             self.mqtt.publish(self.topic, json.dumps(payload))
 
@@ -681,7 +681,7 @@ class Pipeline:
             self.everyframe = None
         else:
             # Capture every frame from the video file in self.input
-            if self.args.interframe_delay is None:
+            if self.args.interframe_interval is None:
                 self.everyframe = threading.Event()
             # Disable power-saving delay mechanism
             self.args.disable_powersaving = True
@@ -1290,13 +1290,13 @@ class Pipeline:
         box = MBox()
         # Event that kicks off the capture loop (only when pipeline is ready)
         self.kickstart = threading.Event()
-        ifd = self.args.interframe_delay
-        if ifd is not None:
+        ifi = self.args.interframe_interval
+        if ifi is not None:
             self.everyframe = None
-            ifd_sec = float(ifd)/1000.0
+            ifi_sec = float(ifi)/1000.0
         else:
-            ifd_sec = None
-        capthread = threading.Thread(target=capthread_f, args=(self.cap,self.kickstart,box,self.everyframe,ifd_sec), daemon=True)
+            ifi_sec = None
+        capthread = threading.Thread(target=capthread_f, args=(self.cap,self.kickstart,box,self.everyframe,ifi_sec), daemon=True)
         capthread.start()
         self.process.cpu_percent() # take first 'dummy reading' to start monitoring
         await self.capture(cameraQueue, box)
@@ -1420,7 +1420,7 @@ def get_arguments():
                         default=0.25, metavar='RATIO', type=float)
     parser.add_argument('--enable-background-masking', help='Enable masking of camera view with background subtraction',
                         default=False, action='store_true')
-    parser.add_argument('--interframe-delay', help='Milliseconds of delay to allow between each video frame; drop frames not processed in time',
+    parser.add_argument('--interframe-interval', help='Milliseconds to allow between each video frame; drop frames not processed in time',
                         default=None, metavar='MSECS', type=int)
     parser.add_argument('--object-detector-skip-frames', help='Static number of frames to skip in between invocations of object detector',
                         default=None, metavar='N', type=int)
