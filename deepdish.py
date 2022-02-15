@@ -89,7 +89,7 @@ class MBox:
         self.message = message
         self.lock.release()
 
-def capthread_f(cap, kickstart, box, everyframe, interframe_interval):
+def capthread_f(cap, kickstart, box, everyframe, interframe_interval, simcam):
     count = 0
     # interframe_interval here is already converted to seconds
     delay = interframe_interval
@@ -101,10 +101,11 @@ def capthread_f(cap, kickstart, box, everyframe, interframe_interval):
             t1 = time()
             ret, frame = cap.read()
             if not ret:
-              frame = None
+                frame = None
+            elif simcam:
+                frame = cv2.resize(frame, simcam)
             t2 = time()
             capthread_delta_t = t2 - prev_t
-            #print('{:.02f}ms'.format((t2-prev_t)*1000))
             prev_t = t2
             count += 1
             box.set_message((count,frame,t2,t2-t1))
@@ -119,7 +120,6 @@ def capthread_f(cap, kickstart, box, everyframe, interframe_interval):
                     delay+=0.001
                 elif capthread_delta_t > interframe_interval:
                     delay-=0.001
-                #print('{:.02f}ms {:.02f}ms {:.02f}ms'.format(delay*1000, capthread_delta_t*1000, interframe_interval*1000))
                 delay = max(0, delay)
                 sleep(delay)
     finally:
@@ -293,12 +293,13 @@ class DetectedObject:
 
 # A tracked object based on the output of the tracker
 class TrackedObject:
-    def __init__(self, bbox, txt, lbl, conf, track_id):
+    def __init__(self, bbox, txt, lbl, conf, track_id, ratios):
         self.bbox = bbox
         self.txt = txt
         self.label = lbl
         self.track_id = track_id
         self.confidence = conf
+        self.ratios = ratios
         self.priority = 6
         self.outline = (255, 255, 255)
         self.font_fill = (0, 255, 0)
@@ -309,8 +310,9 @@ class TrackedObject:
         render.draw.text(self.bbox[:2],str(self.txt), fill=self.font_fill, font=render.fontlib.fetch(self.font))
     def do_json(self, json):
         if 'tracks' not in json: json['tracks'] = []
-        json['tracks'].append({'bbox': self.bbox.astype(np.int32).tolist(), 'label': self.label, 'confidence': self.confidence, 'track_id': self.track_id})
-
+        wr, hr = self.ratios
+        bbox = self.bbox.astype(np.float32) * [wr,hr,wr,hr]
+        json['tracks'].append({'bbox': bbox.astype(np.int32).tolist(), 'label': self.label, 'confidence': self.confidence, 'track_id': self.track_id})
 
 # Base class for graphical elements that draw a line
 class Line:
@@ -636,7 +638,8 @@ class Pipeline:
                        'powersaving': None if self.args.disable_powersaving else (self.args.powersave_delay_increment, self.args.powersave_delay_maximum),
                        'cpu_governor': self.cpu_governor,
                        'object_detector_skip_frames': self.args.object_detector_skip_frames,
-                       'interframe_interval': self.args.interframe_interval
+                       'interframe_interval': self.args.interframe_interval,
+                       'simulate_camera': self.args.simulate_camera
                        }
             self.mqtt.publish(self.topic, json.dumps(payload))
 
@@ -680,8 +683,19 @@ class Pipeline:
             # Allow live camera frames to be dropped
             self.everyframe = None
         else:
-            # Capture every frame from the video file in self.input
+            # 'live camera simulation'
+            if self.args.simulate_camera:
+                simcam = self.args.simulate_camera
+                simcam = [int(n) for n in simcam]
+                # if only one dimension is specified, assume square input_size
+                if len(simcam) == 1:
+                    simcam = [simcam[0], simcam[0]]
+                self.simcam = simcam[0:2]
+            else:
+                self.simcam = None
+
             if self.args.interframe_interval is None:
+                # Capture every frame from the video file in self.input
                 self.everyframe = threading.Event()
             # Disable power-saving delay mechanism
             self.args.disable_powersaving = True
@@ -692,7 +706,13 @@ class Pipeline:
         self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         # Just in case input_size wasn't already set up
         self.input_size = (int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
-
+        if self.simcam:
+            # in case we are simulating a camera, data should be
+            # scaled back to original coordinates
+            self.trackdata_ratios = (float(self.input_size[0])/float(self.simcam[0]),
+                                     float(self.input_size[1])/float(self.simcam[1]))
+        else:
+            self.trackdata_ratios = (1, 1)
         # Configure the 'counting line' in the camera viewport
         if self.args.line is None:
             w, h = self.input_size
@@ -1041,7 +1061,7 @@ class Pipeline:
                     annot = lbl
                 else:
                     annot = ''
-                elements.append(TrackedObject(bbox, annot, lbl, conf, track.track_id))
+                elements.append(TrackedObject(bbox, annot, lbl, conf, track.track_id, self.trackdata_ratios))
 
                 if self.cam is not None and self.topdownview is not None:
                     # Add to top-down view using cameratransform
@@ -1296,7 +1316,7 @@ class Pipeline:
             ifi_sec = float(ifi)/1000.0
         else:
             ifi_sec = None
-        capthread = threading.Thread(target=capthread_f, args=(self.cap,self.kickstart,box,self.everyframe,ifi_sec), daemon=True)
+        capthread = threading.Thread(target=capthread_f, args=(self.cap,self.kickstart,box,self.everyframe,ifi_sec,self.simcam), daemon=True)
         capthread.start()
         self.process.cpu_percent() # take first 'dummy reading' to start monitoring
         await self.capture(cameraQueue, box)
@@ -1422,6 +1442,8 @@ def get_arguments():
                         default=False, action='store_true')
     parser.add_argument('--interframe-interval', help='Milliseconds to allow between each video frame; drop frames not processed in time',
                         default=None, metavar='MSECS', type=int)
+    parser.add_argument('--simulate-camera', help='Resize video frames to specified WIDTH[ HEIGHT] as if they were arriving from a camera video feed.',
+                        default=[], metavar='DIM', nargs='+')
     parser.add_argument('--object-detector-skip-frames', help='Static number of frames to skip in between invocations of object detector',
                         default=None, metavar='N', type=int)
     parser.add_argument('--max-queue-size', help='Maximum size of the queues that communicate frames between co-routines internally.',
