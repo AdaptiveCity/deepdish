@@ -10,9 +10,9 @@ from timeit import default_timer as timer  ### to calculate FPS
 
 import numpy as np
 from numpy import expand_dims
-from keras.models import load_model
-from keras.preprocessing.image import load_img
-from keras.preprocessing.image import img_to_array
+from tensorflow.keras.models import load_model
+from tensorflow.keras.preprocessing.image import load_img
+from tensorflow.keras.preprocessing.image import img_to_array
 
 from PIL import Image, ImageFont, ImageDraw
 
