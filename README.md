@@ -9,6 +9,8 @@ camera field-of-view, using WiFi for real-time reporting to the Adaptive City pl
 Pi and a Python framework with multiple alternative CNN models such that relative performance in terms of speed, 
 accuracy and energy consumption can be assessed.
 
+Please see the latest (EdgeSys 2022) [paper](https://www.cl.cam.ac.uk/~mrd45/diet-deepdish.pdf) and [slides](https://www.cl.cam.ac.uk/~mrd45/edgesys22_slides.pdf) for more details.
+
 ## Installation
 
 Use of the Docker container is recommended for now.
