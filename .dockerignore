@@ -1,7 +1,10 @@
 *
 !*.py
-!detectors/
-!encoders/
+!detectors/mobilenet/
+!detectors/yolov5/
+!detectors/efficientdet_lite0/
+!encoders/*.pb
+!encoders/*.tflite
 !yolo3/*.py
 !tools/*.py
 !deep_sort/*.py

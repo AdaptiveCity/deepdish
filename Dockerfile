@@ -1,5 +1,13 @@
-FROM tensorflow/tensorflow:2.7.0-gpu
+FROM tensorflow/tensorflow:2.7.1-gpu
 ENV DEBIAN_FRONTEND=noninteractive
+ENV distro=ubuntu2004
+ENV arch=x86_64
+
+# new key (as of 27th Apr 2022)
+RUN apt-key del 7fa2af80
+RUN curl -O https://developer.download.nvidia.com/compute/cuda/repos/$distro/$arch/cuda-keyring_1.0-1_all.deb
+RUN dpkg -i cuda-keyring_1.0-1_all.deb
+RUN rm -f /etc/apt/sources.list.d/cuda.list # out of date
 
 RUN apt-get update -y && apt-get upgrade -y
 RUN apt-get install -y --allow-downgrades \
@@ -23,6 +31,7 @@ RUN apt-get remove -y \
 RUN pip3 install --upgrade pip
 RUN pip3 install -U https://github.com/google-coral/pycoral/releases/download/v2.0.0/tflite_runtime-2.5.0.post1-cp38-cp38-linux_x86_64.whl
 RUN pip3 install -U keras quart gmqtt cameratransform scipy uvloop==0.14.0 matplotlib opencv-python scikit-learn numpy tflite_support datumaro hypercorn
+RUN pip3 install psutil
 
 USER root
 RUN mkdir -p /deepdish/detectors/yolo
@@ -48,10 +57,9 @@ RUN chmod +x /usr/bin/deepdish /usr/bin/simple
 
 COPY *.py /deepdish/
 COPY detectors/mobilenet/* /deepdish/detectors/mobilenet/
-COPY detectors/yolo/* /deepdish/detectors/yolo/
+COPY detectors/yolov5/* /deepdish/detectors/yolov5/
 COPY detectors/efficientdet_lite0/* /deepdish/detectors/efficientdet_lite0/
 COPY encoders/* /deepdish/encoders/
-COPY yolo3/*.py /deepdish/yolo3/
 COPY tools/*.py /deepdish/tools/
 COPY deep_sort/*.py /deepdish/deep_sort/
 
