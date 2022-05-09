@@ -6,7 +6,7 @@ Object recognition, tracking and counting (work-in-progress)
 
 DeepDish is a CNN-based sensor designed to track and count people crossing a 'countline' assigned to the
 camera field-of-view, using WiFi for real-time reporting to the Adaptive City platorm. The sensor uses a Raspberry
-Pi and a Python framework with multiple alternative CNN models such that relative performance in terms of speed, 
+Pi and a Python framework with multiple alternative CNN models such that relative performance in terms of speed,
 accuracy and energy consumption can be assessed.
 
 Please see the latest (EdgeSys 2022) [paper](https://www.cl.cam.ac.uk/~mrd45/diet-deepdish.pdf) and [slides](https://www.cl.cam.ac.uk/~mrd45/edgesys22_slides.pdf) for more details.
@@ -28,22 +28,28 @@ The basic internal data pipeline is:
 
 ![pipeline](docs/images/tracking-by-detection-pipeline.png)
 
-## YOLO model
-
-Be sure to download the H5 file to the correct location.
-
-- `wget -O detectors/yolo/yolo.h5 https://github.com/OlafenwaMoses/ImageAI/releases/download/1.0/yolo.h5`
-
 ## Simple examples
 
 Use the SSD MobileNet backend with v1.
-- `./run.sh python3 deepdish.py --model detectors/mobilenet/ssdmobilenetv1.tflite --labels detectors/mobilenet/labels.txt --encoder-model encoders/mars-64x32x3.pb --input input_file.mp4 --output output_file.mp4`
+- `./run.sh python3 deepdish.py --model detectors/mobilenet/ssdmobilenetv1.tflite --labels detectors/mobilenet/labels.txt --encoder-model encoders/mars-64x32x3.tflite --input input_file.mp4 --output output_file.mp4`
 
-Use the Yolo backend.
-- `./run.sh python3 deepdish.py --model detectors/yolo --labels detectors/yolo --encoder-model encoders/mars-64x32x3.pb --input input_file.mp4 --output output_file.mp4`
+Use the Yolo v5 backend.
+- `./run.sh python3 deepdish.py --model detectors/yolov5/yolov5s-fp16.tflite --labels detectors/yolov5/coco_classes.txt --encoder-model encoders/mars-64x32x3.tflite --input input_file.mp4 --output output_file.mp4`
 
-Use the EdgeTPU backend with one of the SSD MobileNet v2 models and track objects identified as cars, buses, trucks or bicycles:
-- `./run.sh python3 deepdish.py --edgetpu --model=detectors/mobilenet/ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite --labels=detectors/mobilenet/labels.txt --encoder-model=encoders/mars-64x32x3.pb --wanted-labels car,bus,truck,bicycle`
+Use the EdgeTPU backend with one of the SSD MobileNet v2 models and track objects identified as cars, buses, trucks or bicycles, recording live video from camera 0 and saving it into a file:
+- `./run.sh python3 deepdish.py --model detectors/mobilenet/ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite --labels detectors/mobilenet/labels.txt --encoder-model encoders/mars-64x32x3.tflite --wanted-labels car,bus,truck,bicycle --camera 0 --output output_file.mp4`
+
+## 3-D top-down view examples
+
+Camera looking down at 30m by 20m road scene from a height of 5m, angled 40 degrees from vertical. Camera parameters: sensor size 6.99mm x 5.55mm with a focal length of 3.2mm.
+- `python3 deepdish.py --model detectors/yolov5/yolov5s-fp16.tflite --labels detectors/yolov5/coco_classes.txt --encoder-model encoders/mars-64x32x3.tflite --input input_file.mp4 --output output_file.mp4 --3d --sensor-width-mm 6.69 --sensor-height-mm 5.55 --focallength-mm 3.2 --elevation-m 5 --tilt-deg 40 --roll-deg 0 --topdownview-size-m "30,20" --wanted-labels 'person,bicycle,car'`
+
+## Options files
+
+A handy way to save typing is to put the options into a text file and then include them on the command line like so:
+- `python3 deepdish.py --options-file my-model-options.txt --options-file my-3d-options.txt --input input_file.mp4 --output output_file.mp4 --wanted-labels 'person,bicycle,car'`
+
+The options text files simply contain the same exact options you might use on the command line. Newlines are converted into spaces, so you can split your options onto multiple lines with no problem. You can use `--options-file` as much as you want, including inside of text files for nested configurations. The parser simply expands the text of the options file onto the command line. It will stop in cases where the options files form chains of circular dependencies. It will also treat any line in the text file beginning with a '#' as a comment and skip it, for your convenience, giving you the ability to document your configuration or easily toggle functionality on/off.
 
 ## MQTT output examples
 
@@ -57,8 +63,3 @@ Use the EdgeTPU backend with one of the SSD MobileNet v2 models and track object
 
 * `{"acp_ts": "1606480354.9866521", "acp_id": "deepdish-dd01", "temp": 58.426, "poscount_person": 6, "negcount_person": 7, "diff_person": -1, "intcount_person": 13, "delcount_person": 2}`
   * Heartbeat pulse. Same status as above.
-
-## 3-D top-down view examples
-
-Camera looking down at 30m by 20m road scene from a height of 5m, angled 40 degrees from vertical. Camera parameters: sensor size 6.99mm x 5.55mm with a focal length of 3.2mm.
-- `python3 deepdish.py  --model detectors/yolo --labels detectors/yolo --encoder-model encoders/mars-64x32x3.pb --input input_file.mp4 --output output_file.mp4 --3d --sensor-width-mm 6.69 --sensor-height-mm 5.55 --focallength-mm 3.2 --elevation-m 5 --tilt-deg 40 --roll-deg 0 --topdownview-size-m "30,20" --wanted-labels 'person,bicycle,car'`
