@@ -42,12 +42,12 @@ Use the EdgeTPU backend with one of the SSD MobileNet v2 models and track object
 ## 3-D top-down view examples
 
 Camera looking down at 30m by 20m road scene from a height of 5m, angled 40 degrees from vertical. Camera parameters: sensor size 6.99mm x 5.55mm with a focal length of 3.2mm.
-- `python3 deepdish.py --model detectors/yolov5/yolov5s-fp16.tflite --labels detectors/yolov5/coco_classes.txt --encoder-model encoders/mars-64x32x3.tflite --input input_file.mp4 --output output_file.mp4 --3d --sensor-width-mm 6.69 --sensor-height-mm 5.55 --focallength-mm 3.2 --elevation-m 5 --tilt-deg 40 --roll-deg 0 --topdownview-size-m "30,20" --wanted-labels 'person,bicycle,car'`
+- `./run.sh python3 deepdish.py --model detectors/yolov5/yolov5s-fp16.tflite --labels detectors/yolov5/coco_classes.txt --encoder-model encoders/mars-64x32x3.tflite --input input_file.mp4 --output output_file.mp4 --3d --sensor-width-mm 6.69 --sensor-height-mm 5.55 --focallength-mm 3.2 --elevation-m 5 --tilt-deg 40 --roll-deg 0 --topdownview-size-m "30,20" --wanted-labels 'person,bicycle,car'`
 
 ## Options files
 
 A handy way to save typing is to put the options into a text file and then include them on the command line like so:
-- `python3 deepdish.py --options-file my-model-options.txt --options-file my-3d-options.txt --input input_file.mp4 --output output_file.mp4 --wanted-labels 'person,bicycle,car'`
+- `./run.sh python3 deepdish.py --options-file my-model-options.txt --options-file my-3d-options.txt --input input_file.mp4 --output output_file.mp4 --wanted-labels 'person,bicycle,car'`
 
 The options text files simply contain the same exact options you might use on the command line. Newlines are converted into spaces, so you can split your options onto multiple lines with no problem. You can use `--options-file` as much as you want, including inside of text files for nested configurations. The parser simply expands the text of the options file onto the command line. It will stop in cases where the options files form chains of circular dependencies. It will also treat any line in the text file beginning with a '#' as a comment and skip it, for your convenience, giving you the ability to document your configuration or easily toggle functionality on/off.
 
