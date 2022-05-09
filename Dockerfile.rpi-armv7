@@ -30,9 +30,11 @@ RUN pip3 install --upgrade pip wheel setuptools
 RUN pip3 install --index-url https://www.piwheels.org/simple   --only-binary=:all: opencv-python-headless==4.5.1.48 numpy==1.19.2
 
 WORKDIR /tmp
-RUN wget https://raw.githubusercontent.com/PINTO0309/TensorflowLite-bin/main/2.7.0/download_tflite_runtime-2.7.0-cp37-none-linux_armv7l.whl.sh
-RUN bash download_tflite_runtime-2.7.0-cp37-none-linux_armv7l.whl.sh
-RUN pip3 install --only-binary=:all: tflite_runtime-2.7.0-cp37-none-linux_armv7l.whl
+#RUN wget https://raw.githubusercontent.com/PINTO0309/TensorflowLite-bin/main/2.7.0/download_tflite_runtime-2.7.0-cp37-none-linux_armv7l.whl.sh
+#RUN bash download_tflite_runtime-2.7.0-cp37-none-linux_armv7l.whl.sh
+#RUN pip3 install --only-binary=:all: tflite_runtime-2.7.0-cp37-none-linux_armv7l.whl
+RUN curl -OL https://github.com/PINTO0309/TensorflowLite-bin/releases/download/v2.9.0-rc0/tflite_runtime-2.9.0rc0-cp37-none-linux_armv7l.whl
+RUN pip3 install --only-binary=:all: tflite_runtime-2.9.0rc0-cp37-none-linux_armv7l.whl
 
 
 # RUN pip3 install --index-url https://www.piwheels.org/simple -U -i https://www.piwheels.org/simple opencv-python keras pandas==1.1.5 matplotlib cycler uvloop==0.14.0 numpy quart gmqtt cameratransform pillow pytz python-dateutil  # --platform linux/arm/v7  --only-binary=:all:
