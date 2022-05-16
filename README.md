@@ -27,6 +27,10 @@ this repository to run it, just like `run.sh` shown above. The
 recommended because it comes pre-installed with docker for Raspberry
 Pi.
 
+The script `build-rpi-tflite-armv7.sh` can be used to crosscompile the
+docker image for Raspberry Pi from a much faster workstation, if you
+want to build it yourself.
+
 ## Overview
 
 The Raspberry Pi and camera have been mounted into a custom housing as below:
