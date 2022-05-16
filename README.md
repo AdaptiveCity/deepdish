@@ -13,12 +13,19 @@ Please see the latest (EdgeSys 2022) [paper](https://www.cl.cam.ac.uk/~mrd45/die
 
 ## Installation
 
-Use of the Docker container is recommended for now.
+Use of the Docker container is recommended for now. For x86-64 workstations with docker support for GPUs (tested with docker 20.10.16):
 ```
 docker pull mrdanish/deepdish
 ./run.sh python3 deepdish.py <options>
 ```
 If you want to build the docker image yourself then run `make docker` and edit `run.sh` to set `IMAGE=deepdish`.
+
+For Raspberry Pi the docker image `mrdanish/deepdish-rpi-tflite-armv7`
+is available and a sample script `pi-tflite-run.sh` is provided in
+this repository to run it, just like `run.sh` shown above. The
+[Hypriot](https://blog.hypriot.com/) distribution of Linux is
+recommended because it comes pre-installed with docker for Raspberry
+Pi.
 
 ## Overview
 
@@ -30,7 +37,7 @@ The basic internal data pipeline is:
 
 ![pipeline](docs/images/tracking-by-detection-pipeline.png)
 
-## Simple examples
+## Simple examples (on x86-64 workstation)
 
 Use the SSD MobileNet backend with v1.
 - `./run.sh python3 deepdish.py --model detectors/mobilenet/ssdmobilenetv1.tflite --labels detectors/mobilenet/labels.txt --encoder-model encoders/mars-64x32x3.tflite --input input_file.mp4 --output output_file.mp4`
@@ -38,8 +45,11 @@ Use the SSD MobileNet backend with v1.
 Use the Yolo v5 backend.
 - `./run.sh python3 deepdish.py --model detectors/yolov5/yolov5s-fp16.tflite --labels detectors/yolov5/coco_classes.txt --encoder-model encoders/mars-64x32x3.tflite --input input_file.mp4 --output output_file.mp4`
 
+
+## Simple examples (on Raspberry Pi)
+
 Use the EdgeTPU backend with one of the SSD MobileNet v2 models and track objects identified as cars, buses, trucks or bicycles, recording live video from camera 0 and saving it into a file:
-- `./run.sh python3 deepdish.py --model detectors/mobilenet/ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite --labels detectors/mobilenet/labels.txt --encoder-model encoders/mars-64x32x3.tflite --wanted-labels car,bus,truck,bicycle --camera 0 --output output_file.mp4`
+- `./pi-tflite-run.sh python3 deepdish.py --model detectors/mobilenet/ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite --labels detectors/mobilenet/labels.txt --encoder-model encoders/mars-64x32x3.tflite --wanted-labels car,bus,truck,bicycle --camera 0 --output output_file.mp4`
 
 ## 3-D top-down view examples
 
