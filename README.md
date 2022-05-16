@@ -15,9 +15,11 @@ Please see the latest (EdgeSys 2022) [paper](https://www.cl.cam.ac.uk/~mrd45/die
 
 Use of the Docker container is recommended for now.
 ```
-make docker
+docker pull mrdanish/deepdish
 ./run.sh python3 deepdish.py <options>
 ```
+If you want to build the docker image yourself then run `make docker` and edit `run.sh` to set `IMAGE=deepdish`.
+
 ## Overview
 
 The Raspberry Pi and camera have been mounted into a custom housing as below:
