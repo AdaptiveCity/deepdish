@@ -73,6 +73,9 @@ import faulthandler
 
 faulthandler.enable()
 
+##################################################
+# Video capture thread
+
 class MBox:
     def __init__(self):
         self.message = None
@@ -125,12 +128,16 @@ def capthread_f(cap, kickstart, box, everyframe, interframe_interval, simcam):
     finally:
         cap.release()
 
+##################################################
+# Quart web app
+
 class Error(Exception):
     def __init__(self, msg):
         self.message = msg
 
 webapp = Quart(__name__)
 
+# Concurrency-safe box for passing along video frames to the web stream
 class StreamingInfo:
     def __init__(self):
         self.lock = asyncio.Lock()
@@ -144,10 +151,11 @@ class StreamingInfo:
 
 streaminfo = StreamingInfo()
 
+# Yield successive frames to the web stream
 async def generate(si):
     # loop over frames from the output stream
     while True:
-        await asyncio.sleep(0.003) #FIXME: is this necessary?
+        await asyncio.sleep(0.003) # cooperate with other processes
         # wait until the lock is acquired
         frame = await si.get_frame()
         # check if the output frame is available, otherwise skip
@@ -178,6 +186,8 @@ async def video_feed():
     # type (mime type)
     return Response(generate(streaminfo), mimetype = "multipart/x-mixed-replace; boundary=frame")
 
+##################################################
+# Utility classes
 
 class FreshQueue(asyncio.Queue):
     """A subclass of queue that keeps only one, fresh item"""
@@ -222,9 +232,10 @@ class RenderInfo:
         self.buffer = buffer
 
 ##################################################
-# Output elements
+# Output elements - things that are rendered in video or text output
 
 class FrameInfo:
+    """Basics about the current video frame"""
     def __init__(self, t_frame, framenum):
         self.t_frame = t_frame
         self.framenum = framenum
@@ -246,6 +257,7 @@ class FrameInfo:
         json['acp_ts'] = str(self.t_frame)
 
 class TimingInfo:
+    """Various categories of profiling (time)"""
     def __init__(self, desc, short_label, delta_t):
         self.description = desc
         self.short_label = short_label
@@ -257,6 +269,7 @@ class TimingInfo:
         json['timing'][self.short_label]=round(self.delta_t*1000)
 
 class TempInfo:
+    """CPU Temp"""
     def __init__(self, temp):
         self.temp = temp
         self.priority = 2
@@ -265,6 +278,7 @@ class TempInfo:
         json['temp']=self.temp
 
 class PipelineInfo:
+    """Pipeline profiling info - sizes of queues, number of frames in flight, cpu % and cpu freq."""
     def __init__(self, count, qsizes, cpup, freq):
         self.count = count
         self.priority = 3
@@ -278,8 +292,8 @@ class PipelineInfo:
         json['cpup']=self.cpup
         json['freq']=self.freq
 
-# A detected object - simply the information conveyed by the object detector
 class DetectedObject:
+    """A detected object - simply the information conveyed by the object detector"""
     def __init__(self, bbox):
         self.bbox = bbox
         self.priority = 5
@@ -291,8 +305,8 @@ class DetectedObject:
         if 'detections' not in json: json['detections'] = []
         json['detections'].append({'bbox': self.bbox.astype(np.int32).tolist()})
 
-# A tracked object based on the output of the tracker
 class TrackedObject:
+    """A tracked object based on the output of the tracker"""
     def __init__(self, bbox, txt, lbl, conf, track_id, ratios):
         self.bbox = bbox
         self.txt = txt
@@ -314,8 +328,8 @@ class TrackedObject:
         bbox = self.bbox.astype(np.float32) * [wr,hr,wr,hr]
         json['tracks'].append({'bbox': bbox.astype(np.int32).tolist(), 'label': self.label, 'confidence': self.confidence, 'track_id': self.track_id})
 
-# Base class for graphical elements that draw a line
 class Line:
+    """Base class for graphical elements that draw a line"""
     def do_render(self, render):
         pts = list(np.int32(np.array(self.pts).reshape(-1,2) * render.ratio).reshape(-1))
         render.draw.line(pts, fill=self.fill, width=self.width)
@@ -342,6 +356,7 @@ class CameraCountLine(Line):
         self.fill = (0, 0, 255)
 
 class CameraImage:
+    """The background image"""
     def __init__(self, image):
         self.image = image
         self.priority = 1
@@ -351,6 +366,7 @@ class CameraImage:
         render.buffer.paste(self.image)
 
 class FGMask:
+    """Apply a foreground mask if desired"""
     def __init__(self, fgMask):
         self.fgMask = fgMask
         self.priority = 2
@@ -360,6 +376,7 @@ class FGMask:
         render.buffer.paste(image)
 
 class CountingStats:
+    """Stats about the objects being counted in the scene"""
     def __init__(self, negcount, poscount):
         self.negcount = negcount
         self.poscount = poscount
@@ -391,6 +408,7 @@ class CountingStats:
             render.draw.text((w - dx, cursor), str(self.poscount[lbl]), fill=self.font_fill_poscount, font=font)
 
 class TopDownView:
+    """Show a top-down viewport if enabled"""
     def __init__(self, topdownview):
         (viewpos, viewsize) = topdownview
         self.viewpos = np.array(viewpos,dtype=int)
@@ -402,6 +420,7 @@ class TopDownView:
         render.draw.rectangle(pts, fill=(0, 0, 0))
 
 class TopDownObj():
+    """Show an object in the top-down viewport if enabled"""
     def __init__(self, topdownview, pts):
         (viewpos, viewsize) = topdownview
         self.viewpos = np.array(viewpos,dtype=int)
@@ -421,6 +440,8 @@ class TopDownObj():
         render.draw.line(linepts, fill=self.fill, width=self.width)
 
 ##################################################
+# Main pipeline of video input, object detection, feature encoding,
+# tracking and output. See Danish, et al. (2022) for more details.
 
 class Pipeline:
     """Object detection and tracking pipeline"""
