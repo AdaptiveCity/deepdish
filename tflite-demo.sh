@@ -1,7 +1,7 @@
 #!/bin/bash
 
 
-INP="${1:-bicycle_test1.mp4}"
+INP="${1:-chall1.mp4}"
 OUT="${2:-out_$INP}"
 
 DEFAULT_MODEL=detectors/efficientdet_lite0/efficientdet_lite0.tflite
