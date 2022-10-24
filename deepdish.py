@@ -681,6 +681,7 @@ class Pipeline:
 
     def init_camera(self):
         self.input = self.args.input
+        self.simcam = None
         if self.args.input_cvat_dir is not None:
             # Set up frame-by-frame from files in input CVAT directory
             self.input = os.path.join(self.args.input_cvat_dir, "images/frame_%06d.jpg")
