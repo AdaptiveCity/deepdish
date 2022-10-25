@@ -1208,9 +1208,8 @@ class Pipeline:
         if self.output is not None:
             self.output.write(outputbgr)
         if self.framebufdev is not None:
-            outputrgba = cv2.cvtColor(outputbgra, cv2.COLOR_BGRA2RGBA)
-            output565 = cv2.cvtColor(outputbgra, cv2.COLOR_RGBA2BGR565)
-            outputfbuf = cv2.resize(output565, self.framebufres)
+            # assume 32-bit bits-per-pixel as is common on Linux systems
+            outputfbuf = cv2.resize(outputbgra, self.framebufres)
             try:
                 with open(self.framebufdev, 'wb') as buf:
                     buf.write(outputfbuf)
