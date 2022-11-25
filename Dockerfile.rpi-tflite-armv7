@@ -39,13 +39,12 @@ RUN apt-get install -y --allow-downgrades \
 RUN pip3 install --upgrade pip wheel setuptools
 
 # Hold numpy at 1.19.2 while installing tflite-runtime for dependency purposes
-RUN pip3 install --extra-index-url https://www.piwheels.org/simple --only-binary=:all: -U opencv-python-headless==4.5.1.48 numpy==1.19.2 keras==2.3.1 pandas==1.1.5 matplotlib cycler uvloop==0.14.0 quart hypercorn gmqtt cameratransform pillow pytz python-dateutil tflite_support psutil
+RUN pip3 install --extra-index-url https://www.piwheels.org/simple --only-binary=:all: -U opencv-python-headless>=4.5.4 numpy==1.19.2 keras==2.3.1 pandas==1.1.5 matplotlib cycler uvloop==0.14.0 quart hypercorn gmqtt cameratransform pillow pytz python-dateutil tflite_support psutil
 
-# TFLite-runtime 2.7.0 for ARMv7
+# TFLite-runtime 2.9.0 for ARMv7
 WORKDIR /tmp
-RUN wget https://raw.githubusercontent.com/PINTO0309/TensorflowLite-bin/main/2.7.0/download_tflite_runtime-2.7.0-cp37-none-linux_armv7l.whl.sh
-RUN bash download_tflite_runtime-2.7.0-cp37-none-linux_armv7l.whl.sh
-RUN pip3 install --only-binary=:all: tflite_runtime-2.7.0-cp37-none-linux_armv7l.whl
+RUN curl -OL https://github.com/PINTO0309/TensorflowLite-bin/releases/download/v2.9.0/tflite_runtime-2.9.0-cp37-none-linux_armv7l.whl
+RUN pip3 install --only-binary=:all: tflite_runtime-2.9.0-cp37-none-linux_armv7l.whl
 
 # Seems to work OK to install newer numpy after tflite-runtime is safely installed
 RUN pip3 install --extra-index-url https://www.piwheels.org/simple --only-binary=:all: -U numpy
@@ -79,7 +78,6 @@ RUN (cd /usr/bin; chmod +x deepdish.sh yolov5-demo.sh tflite-demo.sh)
 
 COPY *.py /deepdish/
 COPY detectors/mobilenet/* /deepdish/detectors/mobilenet/
-COPY detectors/yolo/* /deepdish/detectors/yolo/
 COPY detectors/efficientdet_lite0/* /deepdish/detectors/efficientdet_lite0/
 COPY detectors/yolov5/* /deepdish/detectors/yolov5/
 COPY encoders/* /deepdish/encoders/
